@@ -82,7 +82,7 @@ CREATE TABLE deso_sinks_burn_txns
     block_height bigint
 );
 
-comment on table deso_sinks_burn_txns is E'@foreignKey (transaction_hash) references transaction (transaction_hash)|@foreignFieldName deso_sinks_burn_txn|@fieldName transaction'
+comment on table deso_sinks_burn_txns is E'@foreignKey (transaction_hash) references transaction (transaction_hash)|@foreignFieldName deso_sinks_burn_txn|@fieldName transaction';
 
 CREATE TABLE deso_sinks_burn_amounts (
 	public_key varchar primary key,
