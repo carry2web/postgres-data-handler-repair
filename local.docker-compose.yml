@@ -96,6 +96,29 @@ services:
     depends_on:
       db-ss:
         condition: service_healthy
+  repair:
+    build:
+      context: ..
+      dockerfile: postgres-data-handler/Dockerfile.repair
+    environment:
+      - DB_HOST=db-ss
+      - DB_NAME=postgres
+      - DB_PASSWORD=postgres
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - STATE_CHANGE_DIR=/ss/state-changes
+      - LOG_QUERIES=false
+      #     Mainnet Settings:
+      #      - IS_TESTNET=false
+      #     Testnet Settings:
+      - IS_TESTNET=true
+    volumes:
+      - ss_volume:/ss
+    depends_on:
+      db-ss:
+        condition: service_healthy
+    profiles:
+      - repair
   #  gql:
   #    image: docker.io/desoprotocol/graphql-api:4255d8c3c5be7911ed7817ef7b1baf979a6d3818
   #    environment:

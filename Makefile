@@ -9,3 +9,12 @@ test-env:
 
 dev-env-down:
 	docker compose -f local.docker-compose.yml down --volumes
+
+repair:
+	docker compose -f local.docker-compose.yml --profile repair up repair
+
+repair-build:
+	docker compose -f local.docker-compose.yml --profile repair up --build repair
+
+repair-local:
+	cd cmd/repair && go run repair.go
