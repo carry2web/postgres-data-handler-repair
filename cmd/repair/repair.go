@@ -140,31 +140,25 @@ func processBlockFromAPI(nodeURL string, height uint64, pdh *handler.PostgresDat
 		return err
 	}
 
-	// Create state change entries for block and UTXO operations
-	entries := []*lib.StateChangeEntry{
-		{
-			EncoderType:   lib.EncoderTypeBlock,
-			OperationType: lib.DbOperationTypeUpsert,
-			Encoder:       block,
-			Block:         block,
-			BlockHeight:   height,
-			KeyBytes:      block.BadgerKey(),
-		},
-		{
-			EncoderType:   lib.EncoderTypeUtxoOperationBundle,
-			OperationType: lib.DbOperationTypeUpsert,
-			Encoder:       &lib.UtxoOperationBundle{UtxoOpBundle: block.UtxoOps},
-			Block:         block,
-			BlockHeight:   height,
-			KeyBytes:      lib.Prefixes.PrefixBlockHashToUtxoOperations,
-		},
+	// Compute block hash for KeyBytes
+	blockHash, err := block.Hash()
+	if err != nil {
+		return fmt.Errorf("failed to compute block hash: %w", err)
 	}
 
-	// Process entries by type
-	for _, entry := range entries {
-		if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
-			return fmt.Errorf("failed to process %v for height %d: %w", entry.EncoderType, height, err)
-		}
+	// Create state change entry for the block
+	blockEntry := &lib.StateChangeEntry{
+		EncoderType:   lib.EncoderTypeBlock,
+		OperationType: lib.DbOperationTypeUpsert,
+		Encoder:       block,
+		Block:         block,
+		BlockHeight:   height,
+		KeyBytes:      blockHash[:],
+	}
+
+	// Process the block entry
+	if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{blockEntry}, false); err != nil {
+		return fmt.Errorf("failed to process block for height %d: %w", height, err)
 	}
 
 	log.Printf("Successfully processed block %d via API", height)
