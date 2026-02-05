@@ -97,12 +97,12 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 	}
 
 	// Parse APIBlockResponse format
-	// The API returns hashes as hex strings, we need to decode them
+	// The API returns hashes as hex strings in specific field names
 	var apiResult struct {
 		Header struct {
 			Version                      uint32 `json:"Version"`
-			PrevBlockHash                string `json:"PrevBlockHash"`
-			TransactionMerkleRoot        string `json:"TransactionMerkleRoot"`
+			PrevBlockHashHex             string `json:"PrevBlockHashHex"`
+			TransactionMerkleRootHex     string `json:"TransactionMerkleRootHex"`
 			TstampNanoSecs               int64  `json:"TstampNanoSecs"`
 			Height                       uint64 `json:"Height"`
 			Nonce                        uint64 `json:"Nonce"`
@@ -126,12 +126,12 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 	}
 
 	// Decode hex strings to BlockHash
-	prevBlockHash, err := decodeBlockHash(apiResult.Header.PrevBlockHash)
+	prevBlockHash, err := decodeBlockHash(apiResult.Header.PrevBlockHashHex)
 	if err != nil {
 		return nil, fmt.Errorf("decode prev block hash: %w", err)
 	}
 
-	txnMerkleRoot, err := decodeBlockHash(apiResult.Header.TransactionMerkleRoot)
+	txnMerkleRoot, err := decodeBlockHash(apiResult.Header.TransactionMerkleRootHex)
 	if err != nil {
 		return nil, fmt.Errorf("decode txn merkle root: %w", err)
 	}
