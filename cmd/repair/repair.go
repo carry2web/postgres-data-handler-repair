@@ -125,12 +125,15 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 			lastErr = fmt.Errorf("parse block bytes: %w", err)
 			resp.Body.Close()
 			time.Sleep(time.Second * time.Duration(attempt))
-			continode URL for API calls
-	nodeURL := viper.GetString("NODE_URL")
-	if nodeURL == "" {
-		nodeURL = "http://localhost:17001" // Default for mainnet node
+			continue
+		}
+		return block, nil
 	}
-	log.Printf("Using DeSo node URL: %s", nodeURLa block from the node API
+
+	return nil, fmt.Errorf("fetchBlockByHeight failed after %d attempts: %v", maxRetries, lastErr)
+}
+
+// processBlockFromAPI fetches and processes a block from the node API
 func processBlockFromAPI(nodeURL string, height uint64, pdh *handler.PostgresDataHandler) error {
 	block, err := fetchBlockByHeight(nodeURL, height)
 	if err != nil {
@@ -200,15 +203,12 @@ func main() {
 		db.AddQueryHook(bundebug.NewQueryHook(bundebug.WithVerbose(true)))
 	}
 
-	// Get state change directory
-	stateChangeDir := viper.GetString("STATE_CHANGE_DIR")
-	if stateChangeDir == "" {
-		log.Fatalf("STATE_CHANGE_DIR must be set in config or environment")
+	// Get node URL for API calls
+	nodeURL := viper.GetString("NODE_URL")
+	if nodeURL == "" {
+		nodeURL = "http://localhost:17001" // Default for mainnet node
 	}
-	log.Printf("Using state change directory: %s", stateChangeDir)
-
-	// Set the state change dir flag that core uses, so DeSoEncoders properly encode and decode state change metadata
-	viper.Set("state-change-dir", stateChangeDir)
+	log.Printf("Using DeSo node URL: %s", nodeURL)
 
 	// Choose network params
 	params := &lib.DeSoMainnetParams
@@ -231,10 +231,7 @@ func main() {
 		CachedEntries: cachedEntries,
 	}
 
-	// Create state change file reader
-	log.Printf("Initializing state change file reader...")
-	reader, err := consumer.NewStateChangeFileReader(stateChangeDir)
-	if Detect gaps
+	// Detect gaps
 	gaps, err := detectGaps(db)
 	if err != nil {
 		log.Fatalf("detectGaps: %v", err)
@@ -258,7 +255,10 @@ func main() {
 
 			// Fetch and process block from node API
 			if err := processBlockFromAPI(nodeURL, h, pdh); err != nil {
-				log.Printf("WARNING: Failed to process block
+				log.Printf("WARNING: Failed to process block %d: %v", h, err)
+				continue
+			}
+		}
 
 		if err := pdh.CommitTransaction(); err != nil {
 			log.Fatalf("CommitTransaction: %v", err)
