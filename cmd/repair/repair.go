@@ -62,28 +62,30 @@ ORDER BY start;
 	return gaps, nil
 }
 
-// fetchBlockByHeight fetches a block from the DeSo node by height using the /api/v0/block endpoint.
+// fetchBlockByHeight fetches a block from the DeSo node by height using the node API endpoint.
 func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error) {
-	url := fmt.Sprintf("%s/api/v0/block", nodeURL)
-	body, err := json.Marshal(map[string]interface{}{"Height": height})
-	if err != nil {
-		return nil, fmt.Errorf("marshal block request: %w", err)
-	}
+	// Try local node first, then fallback to public node
+	nodeURLs := []string{nodeURL, "https://node.deso.org"}
 
 	var lastErr error
-	maxRetries := 5
-	for attempt := 1; attempt <= maxRetries; attempt++ {
+	for _, baseURL := range nodeURLs {
+		url := fmt.Sprintf("%s/api/v0/block", baseURL)
+		body, err := json.Marshal(map[string]interface{}{"Height": height})
+		if err != nil {
+			return nil, fmt.Errorf("marshal block request: %w", err)
+		}
+
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 		if err != nil {
-			return nil, fmt.Errorf("create block request: %w", err)
+			lastErr = fmt.Errorf("create block request: %w", err)
+			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
 
 		client := &http.Client{Timeout: 30 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("block request failed: %w", err)
-			time.Sleep(time.Second * time.Duration(attempt))
+			lastErr = fmt.Errorf("block request failed for %s: %w", baseURL, err)
 			continue
 		}
 		defer resp.Body.Close()
@@ -92,45 +94,45 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 		if err != nil {
 			lastErr = fmt.Errorf("read block response: %w", err)
 			resp.Body.Close()
-			time.Sleep(time.Second * time.Duration(attempt))
 			continue
 		}
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("block fetch failed (status %d): %s", resp.StatusCode, string(respBody))
+		if resp.StatusCode == 404 {
+			lastErr = fmt.Errorf("endpoint not found at %s (404)", baseURL)
 			resp.Body.Close()
-			time.Sleep(time.Second * time.Duration(attempt))
+			continue // Try next URL
+		}
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("block fetch failed from %s (status %d): %s", baseURL, resp.StatusCode, string(respBody))
+			resp.Body.Close()
 			continue
 		}
 
 		var result struct {
-			BlockHex string `json:"BlockHex"`
+			Header *lib.MsgDeSoHeader `json:"Header"`
+			Txns   []*lib.MsgDeSoTxn  `json:"Txns"`
 		}
 		if err := json.Unmarshal(respBody, &result); err != nil {
 			lastErr = fmt.Errorf("decode block response: %w", err)
 			resp.Body.Close()
-			time.Sleep(time.Second * time.Duration(attempt))
 			continue
 		}
 
-		blockBytes, err := hex.DecodeString(result.BlockHex)
-		if err != nil {
-			lastErr = fmt.Errorf("decode block hex: %w", err)
+		if result.Header == nil {
+			lastErr = fmt.Errorf("no header in block response from %s", baseURL)
 			resp.Body.Close()
-			time.Sleep(time.Second * time.Duration(attempt))
 			continue
 		}
 
-		block := &lib.MsgDeSoBlock{}
-		if err := block.FromBytes(blockBytes); err != nil {
-			lastErr = fmt.Errorf("parse block bytes: %w", err)
-			resp.Body.Close()
-			time.Sleep(time.Second * time.Duration(attempt))
-			continue
+		block := &lib.MsgDeSoBlock{
+			Header: result.Header,
+			Txns:   result.Txns,
 		}
+
+		log.Printf("Fetched block %d from %s", height, baseURL)
 		return block, nil
 	}
 
-	return nil, fmt.Errorf("fetchBlockByHeight failed after %d attempts: %v", maxRetries, lastErr)
+	return nil, fmt.Errorf("fetchBlockByHeight failed for all nodes: %v", lastErr)
 }
 
 // processBlockFromAPI fetches and processes a block from the node API
