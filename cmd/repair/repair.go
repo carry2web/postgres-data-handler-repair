@@ -97,28 +97,63 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 	}
 
 	// Parse APIBlockResponse format
-	var result struct {
-		Header       *lib.MsgDeSoHeader `json:"Header"`
+	// The API returns hashes as hex strings, we need to decode them
+	var apiResult struct {
+		Header struct {
+			Version                      uint32 `json:"Version"`
+			PrevBlockHash                string `json:"PrevBlockHash"`
+			TransactionMerkleRoot        string `json:"TransactionMerkleRoot"`
+			TstampNanoSecs               int64  `json:"TstampNanoSecs"`
+			Height                       uint64 `json:"Height"`
+			Nonce                        uint64 `json:"Nonce"`
+			ExtraNonce                   uint64 `json:"ExtraNonce"`
+			ProposerVotingPublicKey      string `json:"ProposerVotingPublicKey"`
+			ProposerRandomSeedSignature  string `json:"ProposerRandomSeedSignature"`
+			ProposedInView               uint64 `json:"ProposedInView"`
+			ProposerVotePartialSignature string `json:"ProposerVotePartialSignature"`
+		} `json:"Header"`
 		Transactions []struct {
 			RawTransactionHex string `json:"RawTransactionHex"`
 		} `json:"Transactions"`
 		Error string `json:"Error"`
 	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	if err := json.Unmarshal(respBody, &apiResult); err != nil {
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
-	if result.Error != "" {
-		return nil, fmt.Errorf("API error: %s", result.Error)
+	if apiResult.Error != "" {
+		return nil, fmt.Errorf("API error: %s", apiResult.Error)
 	}
 
-	if result.Header == nil {
-		return nil, fmt.Errorf("no header in response")
+	// Decode hex strings to BlockHash
+	prevBlockHash, err := decodeBlockHash(apiResult.Header.PrevBlockHash)
+	if err != nil {
+		return nil, fmt.Errorf("decode prev block hash: %w", err)
 	}
+
+	txnMerkleRoot, err := decodeBlockHash(apiResult.Header.TransactionMerkleRoot)
+	if err != nil {
+		return nil, fmt.Errorf("decode txn merkle root: %w", err)
+	}
+
+	// Build the proper Header struct
+	header := &lib.MsgDeSoHeader{
+		Version:               apiResult.Header.Version,
+		PrevBlockHash:         prevBlockHash,
+		TransactionMerkleRoot: txnMerkleRoot,
+		TstampNanoSecs:        apiResult.Header.TstampNanoSecs,
+		Height:                apiResult.Header.Height,
+		Nonce:                 apiResult.Header.Nonce,
+		ExtraNonce:            apiResult.Header.ExtraNonce,
+		ProposedInView:        apiResult.Header.ProposedInView,
+	}
+
+	// TODO: Decode BLS fields if present (for PoS blocks)
+	// For now, leave them nil for old PoW blocks
 
 	// Decode transactions from hex
-	txns := make([]*lib.MsgDeSoTxn, len(result.Transactions))
-	for i, txData := range result.Transactions {
+	txns := make([]*lib.MsgDeSoTxn, len(apiResult.Transactions))
+	for i, txData := range apiResult.Transactions {
 		txnBytes, err := hex.DecodeString(txData.RawTransactionHex)
 		if err != nil {
 			return nil, fmt.Errorf("decode transaction %d hex: %w", i, err)
@@ -132,11 +167,31 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 	}
 
 	block := &lib.MsgDeSoBlock{
-		Header: result.Header,
+		Header: header,
 		Txns:   txns,
 	}
 
 	return block, nil
+}
+
+// decodeBlockHash converts a hex string to *lib.BlockHash
+func decodeBlockHash(hexStr string) (*lib.BlockHash, error) {
+	if hexStr == "" {
+		return nil, nil
+	}
+
+	hashBytes, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(hashBytes) != lib.HashSizeBytes {
+		return nil, fmt.Errorf("invalid hash length: got %d, want %d", len(hashBytes), lib.HashSizeBytes)
+	}
+
+	var blockHash lib.BlockHash
+	copy(blockHash[:], hashBytes)
+	return &blockHash, nil
 }
 
 // processBlockFromAPI fetches and processes a block from the node API
