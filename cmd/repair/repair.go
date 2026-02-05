@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/deso-protocol/core/lib"
@@ -170,6 +171,97 @@ func processBlockFromAPI(nodeURL string, height uint64, pdh *handler.PostgresDat
 	return nil
 }
 
+// processGapParallel fetches and processes blocks in parallel using worker pool
+func processGapParallel(nodeURL string, startHeight, endHeight uint64, pdh *handler.PostgresDataHandler, workers int) error {
+	type blockJob struct {
+		height uint64
+	}
+	type blockResult struct {
+		height uint64
+		entry  *lib.StateChangeEntry
+		err    error
+	}
+
+	jobs := make(chan blockJob, workers*2)
+	results := make(chan blockResult, workers*2)
+
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for job := range jobs {
+				block, err := fetchBlockByHeight(nodeURL, job.height)
+				if err != nil {
+					results <- blockResult{height: job.height, err: err}
+					continue
+				}
+
+				blockHash, _ := block.Hash()
+				blockEntry := &lib.StateChangeEntry{
+					OperationType: lib.DbOperationTypeUpsert,
+					KeyBytes:      blockHash[:],
+					Encoder:       block,
+					BlockHeight:   job.height,
+				}
+				results <- blockResult{height: job.height, entry: blockEntry, err: nil}
+			}
+		}(i)
+	}
+
+	// Send jobs
+	go func() {
+		for h := startHeight; h <= endHeight; h++ {
+			jobs <- blockJob{height: h}
+		}
+		close(jobs)
+	}()
+
+	// Close results when all workers done
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results and process in order
+	blockCount := endHeight - startHeight + 1
+	blocks := make(map[uint64]*lib.StateChangeEntry)
+	var errors []error
+
+	for result := range results {
+		if result.err != nil {
+			log.Printf("WARNING: Failed to fetch block %d: %v", result.height, result.err)
+			errors = append(errors, result.err)
+			continue
+		}
+		blocks[result.height] = result.entry
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("failed to fetch %d blocks", len(errors))
+	}
+
+	// Process blocks in height order
+	log.Printf("Fetched %d blocks, now inserting into database...", len(blocks))
+	for h := startHeight; h <= endHeight; h++ {
+		entry, ok := blocks[h]
+		if !ok {
+			return fmt.Errorf("missing block %d", h)
+		}
+
+		if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
+			return fmt.Errorf("failed to process block %d: %w", h, err)
+		}
+
+		if h%1000 == 0 {
+			log.Printf("Progress: %d/%d blocks processed", h-startHeight+1, blockCount)
+		}
+	}
+
+	return nil
+}
+
 func main() {
 	// Load configuration the same way as main.go
 	viper.SetConfigFile(".env")
@@ -242,20 +334,29 @@ func main() {
 
 	// Process each gap
 	for _, gap := range gaps {
-		log.Printf("Processing gap: %d -> %d (%d blocks)", gap.Start, gap.End, gap.End-gap.Start+1)
+		blockCount := gap.End - gap.Start + 1
+		log.Printf("Processing gap: %d -> %d (%d blocks)", gap.Start, gap.End, blockCount)
 
 		if err := pdh.InitiateTransaction(); err != nil {
 			log.Fatalf("InitiateTransaction: %v", err)
 		}
 
-		// Process each block height in the gap
-		for h := gap.Start; h <= gap.End; h++ {
-			log.Printf("Processing height %d...", h)
-
-			// Fetch and process block from node API
-			if err := processBlockFromAPI(nodeURL, h, pdh); err != nil {
-				log.Printf("WARNING: Failed to process block %d: %v", h, err)
-				continue
+		// For small gaps, process sequentially
+		// For large gaps, use parallel fetching for speed
+		if blockCount <= 100 {
+			// Sequential processing for small gaps
+			for h := gap.Start; h <= gap.End; h++ {
+				log.Printf("Processing height %d...", h)
+				if err := processBlockFromAPI(nodeURL, h, pdh); err != nil {
+					log.Printf("WARNING: Failed to process block %d: %v", h, err)
+					continue
+				}
+			}
+		} else {
+			// Parallel processing for large gaps
+			log.Printf("Using parallel processing (50 workers) for large gap...")
+			if err := processGapParallel(nodeURL, gap.Start, gap.End, pdh, 50); err != nil {
+				log.Fatalf("processGapParallel: %v", err)
 			}
 		}
 
