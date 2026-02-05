@@ -151,6 +151,14 @@ func main() {
 		CachedEntries: cachedEntries,
 	}
 
+	// Create state change file reader
+	log.Printf("Initializing state change file reader...")
+	reader, err := consumer.NewStateChangeFileReader(stateChangeDir)
+	if err != nil {
+		log.Fatalf("Failed to create state change file reader: %v", err)
+	}
+	defer reader.Close()
+
 	// Detect gaps
 	gaps, err := detectGaps(db)
 	if err != nil {
@@ -175,15 +183,7 @@ func main() {
 
 			// Read and process state changes from the state-consumer reader
 			if err := processBlockFromStateConsumer(reader, h, pdh); err != nil {
-				log.Printf("WARNING: Failed to process state changes for height %d: %v", h, err
-	reader, err := consumer.NewStateChangeFileReader(stateChangeDir)
-	if err != nil {
-		log.Fatalf("Failed to create state change file reader: %v", err)
-	}
-	defer reader.Close()
-
-	// log.Printf("WARNING: Failed to process state-change file for height %d: %v", h, err)
-				log.Printf("Ensure the state-change file exists at: %s/state-changes-%d", stateChangeDir, h)
+				log.Printf("WARNING: Failed to process state changes for height %d: %v", h, err)
 				continue
 			}
 		}
