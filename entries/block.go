@@ -87,11 +87,22 @@ func BlockEncoderToPGStruct(block *lib.MsgDeSoBlock, keyBytes []byte, params *li
 		proposerVotePartialSignature = block.Header.ProposerVotePartialSignature.ToString()
 	}
 
+	// Handle potentially nil hash fields for old blocks
+	var prevBlockHash string
+	var txnMerkleRoot string
+
+	if block.Header.PrevBlockHash != nil {
+		prevBlockHash = hex.EncodeToString(block.Header.PrevBlockHash[:])
+	}
+	if block.Header.TransactionMerkleRoot != nil {
+		txnMerkleRoot = hex.EncodeToString(block.Header.TransactionMerkleRoot[:])
+	}
+
 	return &PGBlockEntry{
 		BlockEntry: BlockEntry{
 			BlockHash:                    blockHashHex,
-			PrevBlockHash:                hex.EncodeToString(block.Header.PrevBlockHash[:]),
-			TxnMerkleRoot:                hex.EncodeToString(block.Header.TransactionMerkleRoot[:]),
+			PrevBlockHash:                prevBlockHash,
+			TxnMerkleRoot:                txnMerkleRoot,
 			Timestamp:                    consumer.UnixNanoToTime(uint64(block.Header.TstampNanoSecs)),
 			Height:                       block.Header.Height,
 			Nonce:                        block.Header.Nonce,
