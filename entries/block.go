@@ -69,6 +69,22 @@ func BlockEncoderToPGStruct(block *lib.MsgDeSoBlock, keyBytes []byte, params *li
 			}
 		}
 	}
+
+	// Handle PoS fields (nil for old PoW blocks)
+	var proposerVotingPublicKey string
+	var proposerRandomSeedSignature string
+	var proposerVotePartialSignature string
+
+	if block.Header.ProposerVotingPublicKey != nil {
+		proposerVotingPublicKey = block.Header.ProposerVotingPublicKey.ToString()
+	}
+	if block.Header.ProposerRandomSeedSignature != nil {
+		proposerRandomSeedSignature = block.Header.ProposerRandomSeedSignature.ToString()
+	}
+	if block.Header.ProposerVotePartialSignature != nil {
+		proposerVotePartialSignature = block.Header.ProposerVotePartialSignature.ToString()
+	}
+
 	return &PGBlockEntry{
 		BlockEntry: BlockEntry{
 			BlockHash:                    blockHashHex,
@@ -79,10 +95,10 @@ func BlockEncoderToPGStruct(block *lib.MsgDeSoBlock, keyBytes []byte, params *li
 			Nonce:                        block.Header.Nonce,
 			ExtraNonce:                   block.Header.ExtraNonce,
 			BlockVersion:                 block.Header.Version,
-			ProposerVotingPublicKey:      block.Header.ProposerVotingPublicKey.ToString(),
-			ProposerRandomSeedSignature:  block.Header.ProposerRandomSeedSignature.ToString(),
+			ProposerVotingPublicKey:      proposerVotingPublicKey,
+			ProposerRandomSeedSignature:  proposerRandomSeedSignature,
 			ProposedInView:               block.Header.ProposedInView,
-			ProposerVotePartialSignature: block.Header.ProposerVotePartialSignature.ToString(),
+			ProposerVotePartialSignature: proposerVotePartialSignature,
 			BadgerKey:                    keyBytes,
 		},
 	}, blockSigners

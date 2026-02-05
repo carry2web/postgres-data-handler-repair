@@ -115,18 +115,6 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 		return nil, fmt.Errorf("no header in response")
 	}
 
-	// Initialize PoS fields to prevent nil pointer dereference for old PoW blocks
-	// These fields call .ToString() which panics on nil
-	if result.Header.ProposerVotingPublicKey == nil {
-		result.Header.ProposerVotingPublicKey = &lib.PublicKey{}
-	}
-	if result.Header.ProposerRandomSeedSignature == nil {
-		result.Header.ProposerRandomSeedSignature = &lib.Signature{}
-	}
-	if result.Header.ProposerVotePartialSignature == nil {
-		result.Header.ProposerVotePartialSignature = &lib.Signature{}
-	}
-
 	// Decode transactions from hex
 	txns := make([]*lib.MsgDeSoTxn, len(result.Transactions))
 	for i, txData := range result.Transactions {
