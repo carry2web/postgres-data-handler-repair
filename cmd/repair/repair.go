@@ -3,14 +3,13 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/gob"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/deso-protocol/core/lib"
 	"github.com/deso-protocol/postgres-data-handler/handler"
+	"github.com/deso-protocol/state-consumer/consumer"
 	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/lib/pq"
 	"github.com/spf13/viper"
@@ -58,47 +57,23 @@ ORDER BY start;
 	return gaps, nil
 }
 
-// processStateChangeFile reads and processes a state-change file for a specific block height.
-// The state-change files are written by the DeSo node to STATE_CHANGE_DIR.
-func processStateChangeFile(stateChangeDir string, height uint64, pdh *handler.PostgresDataHandler) error {
-	// State change files are named: state-changes-<height>
-	filePath := filepath.Join(stateChangeDir, fmt.Sprintf("state-changes-%d", height))
-
-	// Check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return fmt.Errorf("state-change file not found for height %d: %s", height, filePath)
-	}
-
-	// Open the state-change file
-	file, err := os.Open(filePath)
+// processBlockFromStateConsumer reads and processes state changes for a specific block height
+// using the state-consumer's reader that can read from state-changes.bin and state-changes-index.bin
+func processBlockFromStateConsumer(reader *consumer.StateChangeFileReader, height uint64, pdh *handler.PostgresDataHandler) error {
+	// Read state change entries for this specific block height
+	entries, err := reader.ReadEntriesAtBlockHeight(height)
 	if err != nil {
-		return fmt.Errorf("failed to open state-change file for height %d: %w", height, err)
-	}
-	defer file.Close()
-
-	// Decode the state change entries using gob
-	decoder := gob.NewDecoder(file)
-	var stateChangeEntries []*lib.StateChangeEntry
-
-	for {
-		var entry lib.StateChangeEntry
-		err := decoder.Decode(&entry)
-		if err != nil {
-			if err.Error() == "EOF" {
-				break
-			}
-			return fmt.Errorf("failed to decode state-change entry at height %d: %w", height, err)
-		}
-		stateChangeEntries = append(stateChangeEntries, &entry)
+		return fmt.Errorf("failed to read entries for height %d: %w", height, err)
 	}
 
-	if len(stateChangeEntries) == 0 {
-		return fmt.Errorf("no state change entries found in file for height %d", height)
+	if len(entries) == 0 {
+		log.Printf("No state change entries found for height %d", height)
+		return nil
 	}
 
 	// Group entries by encoder type for batch processing
 	entryBatches := make(map[lib.EncoderType][]*lib.StateChangeEntry)
-	for _, entry := range stateChangeEntries {
+	for _, entry := range entries {
 		entryBatches[entry.EncoderType] = append(entryBatches[entry.EncoderType], entry)
 	}
 
@@ -109,7 +84,7 @@ func processStateChangeFile(stateChangeDir string, height uint64, pdh *handler.P
 		}
 	}
 
-	log.Printf("Successfully processed %d state-change entries for height %d", len(stateChangeEntries), height)
+	log.Printf("Successfully processed %d state-change entries for height %d", len(entries), height)
 	return nil
 }
 
@@ -198,9 +173,16 @@ func main() {
 		for h := gap.Start; h <= gap.End; h++ {
 			log.Printf("Processing height %d...", h)
 
-			// Read and process the state-change file for this height
-			if err := processStateChangeFile(stateChangeDir, h, pdh); err != nil {
-				log.Printf("WARNING: Failed to process state-change file for height %d: %v", h, err)
+			// Read and process state changes from the state-consumer reader
+			if err := processBlockFromStateConsumer(reader, h, pdh); err != nil {
+				log.Printf("WARNING: Failed to process state changes for height %d: %v", h, err
+	reader, err := consumer.NewStateChangeFileReader(stateChangeDir)
+	if err != nil {
+		log.Fatalf("Failed to create state change file reader: %v", err)
+	}
+	defer reader.Close()
+
+	// log.Printf("WARNING: Failed to process state-change file for height %d: %v", h, err)
 				log.Printf("Ensure the state-change file exists at: %s/state-changes-%d", stateChangeDir, h)
 				continue
 			}
