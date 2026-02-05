@@ -62,77 +62,63 @@ ORDER BY start;
 	return gaps, nil
 }
 
-// fetchBlockByHeight fetches a block from the DeSo node by height using the node API endpoint.
+// fetchBlockByHeight fetches a block from the DeSo node by height using the /api/v1/block endpoint.
 func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error) {
-	// Try local node first, then fallback to public node
-	nodeURLs := []string{nodeURL, "https://node.deso.org"}
-
-	var lastErr error
-	for _, baseURL := range nodeURLs {
-		url := fmt.Sprintf("%s/api/v0/block", baseURL)
-		body, err := json.Marshal(map[string]interface{}{"Height": height})
-		if err != nil {
-			return nil, fmt.Errorf("marshal block request: %w", err)
-		}
-
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
-		if err != nil {
-			lastErr = fmt.Errorf("create block request: %w", err)
-			continue
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("block request failed for %s: %w", baseURL, err)
-			continue
-		}
-		defer resp.Body.Close()
-
-		respBody, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			lastErr = fmt.Errorf("read block response: %w", err)
-			resp.Body.Close()
-			continue
-		}
-		if resp.StatusCode == 404 {
-			lastErr = fmt.Errorf("endpoint not found at %s (404)", baseURL)
-			resp.Body.Close()
-			continue // Try next URL
-		}
-		if resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("block fetch failed from %s (status %d): %s", baseURL, resp.StatusCode, string(respBody))
-			resp.Body.Close()
-			continue
-		}
-
-		var result struct {
-			Header *lib.MsgDeSoHeader `json:"Header"`
-			Txns   []*lib.MsgDeSoTxn  `json:"Txns"`
-		}
-		if err := json.Unmarshal(respBody, &result); err != nil {
-			lastErr = fmt.Errorf("decode block response: %w", err)
-			resp.Body.Close()
-			continue
-		}
-
-		if result.Header == nil {
-			lastErr = fmt.Errorf("no header in block response from %s", baseURL)
-			resp.Body.Close()
-			continue
-		}
-
-		block := &lib.MsgDeSoBlock{
-			Header: result.Header,
-			Txns:   result.Txns,
-		}
-
-		log.Printf("Fetched block %d from %s", height, baseURL)
-		return block, nil
+	url := fmt.Sprintf("%s/api/v1/block", nodeURL)
+	body, err := json.Marshal(map[string]interface{}{
+		"Height":    height,
+		"FullBlock": true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal block request: %w", err)
 	}
 
-	return nil, fmt.Errorf("fetchBlockByHeight failed for all nodes: %v", lastErr)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse APIBlockResponse format
+	var result struct {
+		Header       *lib.MsgDeSoHeader `json:"Header"`
+		Transactions []*lib.MsgDeSoTxn  `json:"Transactions"`
+		Error        string             `json:"Error"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+
+	if result.Error != "" {
+		return nil, fmt.Errorf("API error: %s", result.Error)
+	}
+
+	if result.Header == nil {
+		return nil, fmt.Errorf("no header in response")
+	}
+
+	block := &lib.MsgDeSoBlock{
+		Header: result.Header,
+		Txns:   result.Transactions,
+	}
+
+	return block, nil
 }
 
 // processBlockFromAPI fetches and processes a block from the node API
