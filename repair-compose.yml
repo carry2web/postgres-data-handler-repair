@@ -12,8 +12,8 @@ services:
       - /opt/volumes/backend:/db:ro
     restart: "no"
     networks:
-      - run_default
+      - run_internal
 
 networks:
-  run_default:
+  run_internal:
     external: true
