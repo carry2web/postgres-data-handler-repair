@@ -55,17 +55,19 @@ func BlockEncoderToPGStruct(block *lib.MsgDeSoBlock, keyBytes []byte, params *li
 		aggSig := qc.GetAggregatedSignature()
 		if !isInterfaceNil(aggSig) {
 			signersList := aggSig.GetSignersList()
-			for ii := 0; ii < signersList.Size(); ii++ {
-				// Skip signers that didn't sign.
-				if !signersList.Get(ii) {
-					continue
+			if !isInterfaceNil(signersList) {
+				for ii := 0; ii < signersList.Size(); ii++ {
+					// Skip signers that didn't sign.
+					if !signersList.Get(ii) {
+						continue
+					}
+					blockSigners = append(blockSigners, &PGBlockSigner{
+						BlockSigner: BlockSigner{
+							BlockHash:   blockHashHex,
+							SignerIndex: uint64(ii),
+						},
+					})
 				}
-				blockSigners = append(blockSigners, &PGBlockSigner{
-					BlockSigner: BlockSigner{
-						BlockHash:   blockHashHex,
-						SignerIndex: uint64(ii),
-					},
-				})
 			}
 		}
 	}
