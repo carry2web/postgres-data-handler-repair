@@ -11,3 +11,9 @@ services:
       # Use the same bind mount as your backend container
       - /opt/volumes/backend:/db:ro
     restart: "no"
+    networks:
+      - run_default
+
+networks:
+  run_default:
+    external: true
