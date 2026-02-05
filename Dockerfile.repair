@@ -9,8 +9,8 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 
 WORKDIR /postgres-data-handler/src
 
-COPY postgres-data-handler/go.mod postgres-data-handler/
-COPY postgres-data-handler/go.sum postgres-data-handler/
+COPY postgres-data-handler-repair/go.mod postgres-data-handler/
+COPY postgres-data-handler-repair/go.sum postgres-data-handler/
 COPY core/go.mod                  core/
 COPY core/go.sum                  core/
 COPY backend/go.mod               backend/
@@ -23,10 +23,10 @@ WORKDIR /postgres-data-handler/src/postgres-data-handler
 RUN go mod download
 
 # include postgres data handler src
-COPY postgres-data-handler/entries    entries
-COPY postgres-data-handler/migrations migrations
-COPY postgres-data-handler/handler    handler
-COPY postgres-data-handler/cmd        cmd
+COPY postgres-data-handler-repair/entries    entries
+COPY postgres-data-handler-repair/migrations migrations
+COPY postgres-data-handler-repair/handler    handler
+COPY postgres-data-handler-repair/cmd        cmd
 
 # include core src
 COPY core/desohash    ../core/desohash
@@ -51,6 +51,6 @@ COPY state-consumer/consumer ../state-consumer/consumer
 RUN go mod tidy
 
 ## build repair tool
-RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/repair cmd/repair/repair.go
+RUN CGO_CFLAGS="-std=gnu17 -D_GNU_SOURCE -Wno-error=implicit-function-declaration" GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/repair cmd/repair/repair.go
 
 ENTRYPOINT ["/postgres-data-handler/src/postgres-data-handler/bin/repair"]
