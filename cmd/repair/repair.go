@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -97,8 +98,10 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 	// Parse APIBlockResponse format
 	var result struct {
 		Header       *lib.MsgDeSoHeader `json:"Header"`
-		Transactions []*lib.MsgDeSoTxn  `json:"Transactions"`
-		Error        string             `json:"Error"`
+		Transactions []struct {
+			RawTransactionHex string `json:"RawTransactionHex"`
+		} `json:"Transactions"`
+		Error string `json:"Error"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("unmarshal response: %w", err)
@@ -112,9 +115,24 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 		return nil, fmt.Errorf("no header in response")
 	}
 
+	// Decode transactions from hex
+	txns := make([]*lib.MsgDeSoTxn, len(result.Transactions))
+	for i, txData := range result.Transactions {
+		txnBytes, err := hex.DecodeString(txData.RawTransactionHex)
+		if err != nil {
+			return nil, fmt.Errorf("decode transaction %d hex: %w", i, err)
+		}
+
+		txn := &lib.MsgDeSoTxn{}
+		if err := txn.FromBytes(txnBytes); err != nil {
+			return nil, fmt.Errorf("parse transaction %d bytes: %w", i, err)
+		}
+		txns[i] = txn
+	}
+
 	block := &lib.MsgDeSoBlock{
 		Header: result.Header,
-		Txns:   result.Transactions,
+		Txns:   txns,
 	}
 
 	return block, nil
