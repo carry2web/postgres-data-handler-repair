@@ -5,12 +5,9 @@ services:
       dockerfile: postgres-data-handler-repair/Dockerfile.repair
     env_file:
       - ./data-handler.env
+    environment:
+      - NODE_URL=http://backend:17001
     volumes:
-      # Use the same volume name as your backend docker-compose.yml
-      - backend_db_volume:/db:ro
+      # Use the same bind mount as your backend container
+      - /opt/volumes/backend:/db:ro
     restart: "no"
-
-volumes:
-  backend_db_volume:
-    external: true
-    name: run_mainnet-db

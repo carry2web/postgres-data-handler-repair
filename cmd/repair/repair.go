@@ -1,15 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/deso-protocol/core/lib"
 	"github.com/deso-protocol/postgres-data-handler/handler"
-	"github.com/deso-protocol/state-consumer/consumer"
 	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/lib/pq"
 	"github.com/spf13/viper"
@@ -57,34 +62,109 @@ ORDER BY start;
 	return gaps, nil
 }
 
-// processBlockFromStateConsumer reads and processes state changes for a specific block height
-// using the state-consumer's reader that can read from state-changes.bin and state-changes-index.bin
-func processBlockFromStateConsumer(reader *consumer.StateChangeFileReader, height uint64, pdh *handler.PostgresDataHandler) error {
-	// Read state change entries for this specific block height
-	entries, err := reader.ReadEntriesAtBlockHeight(height)
+// fetchBlockByHeight fetches a block from the DeSo node by height using the /api/v0/block endpoint.
+func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error) {
+	url := fmt.Sprintf("%s/api/v0/block", nodeURL)
+	body, err := json.Marshal(map[string]interface{}{"Height": height})
 	if err != nil {
-		return fmt.Errorf("failed to read entries for height %d: %w", height, err)
+		return nil, fmt.Errorf("marshal block request: %w", err)
 	}
 
-	if len(entries) == 0 {
-		log.Printf("No state change entries found for height %d", height)
-		return nil
+	var lastErr error
+	maxRetries := 5
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+		if err != nil {
+			return nil, fmt.Errorf("create block request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("block request failed: %w", err)
+			time.Sleep(time.Second * time.Duration(attempt))
+			continue
+		}
+		defer resp.Body.Close()
+
+		respBody, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			lastErr = fmt.Errorf("read block response: %w", err)
+			resp.Body.Close()
+			time.Sleep(time.Second * time.Duration(attempt))
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("block fetch failed (status %d): %s", resp.StatusCode, string(respBody))
+			resp.Body.Close()
+			time.Sleep(time.Second * time.Duration(attempt))
+			continue
+		}
+
+		var result struct {
+			BlockHex string `json:"BlockHex"`
+		}
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			lastErr = fmt.Errorf("decode block response: %w", err)
+			resp.Body.Close()
+			time.Sleep(time.Second * time.Duration(attempt))
+			continue
+		}
+
+		blockBytes, err := hex.DecodeString(result.BlockHex)
+		if err != nil {
+			lastErr = fmt.Errorf("decode block hex: %w", err)
+			resp.Body.Close()
+			time.Sleep(time.Second * time.Duration(attempt))
+			continue
+		}
+
+		block := &lib.MsgDeSoBlock{}
+		if err := block.FromBytes(blockBytes); err != nil {
+			lastErr = fmt.Errorf("parse block bytes: %w", err)
+			resp.Body.Close()
+			time.Sleep(time.Second * time.Duration(attempt))
+			continode URL for API calls
+	nodeURL := viper.GetString("NODE_URL")
+	if nodeURL == "" {
+		nodeURL = "http://localhost:17001" // Default for mainnet node
+	}
+	log.Printf("Using DeSo node URL: %s", nodeURLa block from the node API
+func processBlockFromAPI(nodeURL string, height uint64, pdh *handler.PostgresDataHandler) error {
+	block, err := fetchBlockByHeight(nodeURL, height)
+	if err != nil {
+		return err
 	}
 
-	// Group entries by encoder type for batch processing
-	entryBatches := make(map[lib.EncoderType][]*lib.StateChangeEntry)
+	// Create state change entries for block and UTXO operations
+	entries := []*lib.StateChangeEntry{
+		{
+			EncoderType:   lib.EncoderTypeBlock,
+			OperationType: lib.DbOperationTypeUpsert,
+			Encoder:       block,
+			Block:         block,
+			BlockHeight:   height,
+			KeyBytes:      block.BadgerKey(),
+		},
+		{
+			EncoderType:   lib.EncoderTypeUtxoOperationBundle,
+			OperationType: lib.DbOperationTypeUpsert,
+			Encoder:       &lib.UtxoOperationBundle{UtxoOpBundle: block.UtxoOps},
+			Block:         block,
+			BlockHeight:   height,
+			KeyBytes:      lib.Prefixes.PrefixBlockHashToUtxoOperations,
+		},
+	}
+
+	// Process entries by type
 	for _, entry := range entries {
-		entryBatches[entry.EncoderType] = append(entryBatches[entry.EncoderType], entry)
-	}
-
-	// Process each batch using the PostgresDataHandler
-	for encoderType, batch := range entryBatches {
-		if err := pdh.HandleEntryBatch(batch, false); err != nil {
-			return fmt.Errorf("failed to process batch (encoder type %v) for height %d: %w", encoderType, height, err)
+		if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
+			return fmt.Errorf("failed to process %v for height %d: %w", entry.EncoderType, height, err)
 		}
 	}
 
-	log.Printf("Successfully processed %d state-change entries for height %d", len(entries), height)
+	log.Printf("Successfully processed block %d via API", height)
 	return nil
 }
 
@@ -154,19 +234,14 @@ func main() {
 	// Create state change file reader
 	log.Printf("Initializing state change file reader...")
 	reader, err := consumer.NewStateChangeFileReader(stateChangeDir)
-	if err != nil {
-		log.Fatalf("Failed to create state change file reader: %v", err)
-	}
-	defer reader.Close()
-
-	// Detect gaps
+	if Detect gaps
 	gaps, err := detectGaps(db)
 	if err != nil {
 		log.Fatalf("detectGaps: %v", err)
 	}
 	log.Printf("Found %d gap(s)", len(gaps))
 	for _, g := range gaps {
-		log.Printf("Gap: %d -> %d", g.Start, g.End)
+		log.Printf("Gap: %d -> %d (%d blocks)", g.Start, g.End, g.End-g.Start+1)
 	}
 
 	// Process each gap
@@ -181,12 +256,9 @@ func main() {
 		for h := gap.Start; h <= gap.End; h++ {
 			log.Printf("Processing height %d...", h)
 
-			// Read and process state changes from the state-consumer reader
-			if err := processBlockFromStateConsumer(reader, h, pdh); err != nil {
-				log.Printf("WARNING: Failed to process state changes for height %d: %v", h, err)
-				continue
-			}
-		}
+			// Fetch and process block from node API
+			if err := processBlockFromAPI(nodeURL, h, pdh); err != nil {
+				log.Printf("WARNING: Failed to process block
 
 		if err := pdh.CommitTransaction(); err != nil {
 			log.Fatalf("CommitTransaction: %v", err)
