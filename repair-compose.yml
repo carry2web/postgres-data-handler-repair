@@ -7,7 +7,7 @@ services:
       - ./data-handler.env
     environment:
       - NODE_URL=http://backend:17001
-      - STATE_CHANGE_DIR=/db
+      - STATE_CHANGE_DIR=/db/state-changes
       - REPAIR_WORKERS=200
     volumes:
       # Use the same bind mount as your backend container
