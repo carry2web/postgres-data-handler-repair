@@ -317,30 +317,47 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 	totalBlocks := endHeight - startHeight + 1
 	processedCount := uint64(0)
 
-	for height := startHeight; height <= endHeight; height++ {
-		entry, err := readBlockFromStateChange(indexFile, dataFile, height)
+	// We need to scan sequentially through entries to find blocks in our range
+	// The index file is by entry number, not by block height
+	// Start from the first entry at startHeight and scan forward
+	currentEntryIndex := startHeight
+	blocksFound := uint64(0)
+
+	for blocksFound < totalBlocks {
+		entry, err := readBlockFromStateChange(indexFile, dataFile, currentEntryIndex)
 		if err != nil {
-			return fmt.Errorf("failed to read block at height %d: %w", height, err)
+			return fmt.Errorf("failed to read entry at index %d: %w", currentEntryIndex, err)
 		}
 
-		// Change operation type from Insert to Upsert for repair operations
-		// State-change files contain Insert operations from initial sync,
-		// but we need Upsert to handle existing blocks during repair
-		entry.OperationType = lib.DbOperationTypeUpsert
+		// Only process block entries in our height range
+		if entry.EncoderType == lib.EncoderTypeBlock && 
+		   entry.BlockHeight >= startHeight && 
+		   entry.BlockHeight <= endHeight {
+			
+			// Change operation type from Insert to Upsert for repair operations
+			entry.OperationType = lib.DbOperationTypeUpsert
 
-		// Process the entry
-		if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
-			return fmt.Errorf("failed to process entry at height %d: %w", height, err)
+			// Process the entry
+			if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
+				return fmt.Errorf("failed to process block at height %d: %w", entry.BlockHeight, err)
+			}
+
+			blocksFound++
+			if blocksFound%1000 == 0 {
+				progress := float64(blocksFound) / float64(totalBlocks) * 100
+				log.Printf("Progress: %d/%d blocks (%.2f%%)", blocksFound, totalBlocks, progress)
+			}
 		}
 
-		processedCount++
-		if processedCount%1000 == 0 {
-			progress := float64(processedCount) / float64(totalBlocks) * 100
-			log.Printf("Progress: %d/%d blocks (%.2f%%)", processedCount, totalBlocks, progress)
+		currentEntryIndex++
+		
+		// Safety: don't scan forever if we can't find all blocks
+		if currentEntryIndex > endHeight+1000000 {
+			return fmt.Errorf("scanned 1M entries past end height without finding all blocks (found %d/%d)", blocksFound, totalBlocks)
 		}
 	}
 
-	log.Printf("Successfully processed %d blocks from state-change files", processedCount)
+	log.Printf("Successfully processed %d blocks from state-change files", blocksFound)
 	return nil
 }
 
