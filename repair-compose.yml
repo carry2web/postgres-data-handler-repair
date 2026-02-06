@@ -8,6 +8,7 @@ services:
     environment:
       - NODE_URL=http://backend:17001
       - STATE_CHANGE_DIR=/db
+      - REPAIR_WORKERS=200
     volumes:
       # Use the same bind mount as your backend container
       - /opt/volumes/backend:/db:ro

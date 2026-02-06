@@ -476,7 +476,16 @@ func main() {
 	}
 	db := bun.NewDB(pgdb, pgdialect.New())
 	db.SetConnMaxLifetime(0)
-	db.SetMaxIdleConns(50) // you can tune this
+	
+	// Get worker count from environment (default 100)
+	workerCount := viper.GetInt("REPAIR_WORKERS")
+	if workerCount == 0 {
+		workerCount = 100
+	}
+	// Set max connections to support parallel workers
+	db.SetMaxIdleConns(workerCount + 10)
+	db.SetMaxOpenConns(workerCount + 20)
+	log.Printf("Worker count: %d, Max DB connections: %d", workerCount, workerCount+20)
 
 	// Optional: enable query logging
 	if viper.GetBool("LOG_QUERIES") {
@@ -564,8 +573,8 @@ func main() {
 			}
 		} else {
 			// Parallel API processing for medium and large gaps
-			log.Printf("Using parallel API processing (50 workers) for gap...")
-			if err := processGapParallel(nodeURL, gap.Start, gap.End, pdh, 50); err != nil {
+			log.Printf("Using parallel API processing (%d workers) for gap...", workerCount)
+			if err := processGapParallel(nodeURL, gap.Start, gap.End, pdh, workerCount); err != nil {
 				log.Fatalf("processGapParallel: %v", err)
 			}
 		}
