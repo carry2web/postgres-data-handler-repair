@@ -46,14 +46,26 @@ sequenced AS (
     height,
     LEAD(height) OVER (ORDER BY height) AS next_height
   FROM ordered
+),
+internal_gaps AS (
+  SELECT
+    height + 1        AS start,
+    next_height - 1   AS end,
+    (next_height - height - 1) AS missing_count
+  FROM sequenced
+  WHERE next_height IS NOT NULL
+    AND next_height > height + 1
+),
+first_gap AS (
+  SELECT
+    0::bigint AS start,
+    (SELECT MIN(height) - 1 FROM ordered) AS end,
+    (SELECT MIN(height) FROM ordered) AS missing_count
+  WHERE (SELECT MIN(height) FROM ordered) > 0
 )
-SELECT
-  height + 1        AS start,
-  next_height - 1   AS end,
-  (next_height - height - 1) AS missing_count
-FROM sequenced
-WHERE next_height IS NOT NULL
-  AND next_height > height + 1
+SELECT start, end, missing_count FROM internal_gaps
+UNION ALL
+SELECT start, end, missing_count FROM first_gap
 ORDER BY start;
 	`
 	err := db.NewRaw(query).Scan(context.Background(), &rows)
@@ -558,14 +570,35 @@ func main() {
 		CachedEntries: cachedEntries,
 	}
 
-	// Detect gaps
-	gaps, err := detectGaps(db)
-	if err != nil {
-		log.Fatalf("detectGaps: %v", err)
-	}
-	log.Printf("Found %d gap(s)", len(gaps))
-	for _, g := range gaps {
-		log.Printf("Gap: %d -> %d (%d blocks)", g.Start, g.End, g.End-g.Start+1)
+	// Check for manual range specification
+	var gaps []Gap
+	startHeight := viper.GetUint64("REPAIR_START_HEIGHT")
+	endHeight := viper.GetUint64("REPAIR_END_HEIGHT")
+
+	if startHeight > 0 || endHeight > 0 {
+		// Manual range specified
+		if startHeight == 0 {
+			startHeight = 0 // Allow starting from block 0
+		}
+		if endHeight == 0 {
+			log.Fatalf("REPAIR_END_HEIGHT must be specified when using manual range")
+		}
+		if startHeight > endHeight {
+			log.Fatalf("REPAIR_START_HEIGHT (%d) cannot be greater than REPAIR_END_HEIGHT (%d)", startHeight, endHeight)
+		}
+		gaps = []Gap{{Start: startHeight, End: endHeight}}
+		log.Printf("Manual repair mode: processing range %d -> %d (%d blocks)", startHeight, endHeight, endHeight-startHeight+1)
+	} else {
+		// Automatic gap detection
+		var err error
+		gaps, err = detectGaps(db)
+		if err != nil {
+			log.Fatalf("detectGaps: %v", err)
+		}
+		log.Printf("Found %d gap(s)", len(gaps))
+		for _, g := range gaps {
+			log.Printf("Gap: %d -> %d (%d blocks)", g.Start, g.End, g.End-g.Start+1)
+		}
 	}
 
 	// Process each gap
@@ -573,14 +606,17 @@ func main() {
 		blockCount := gap.End - gap.Start + 1
 		log.Printf("Processing gap: %d -> %d (%d blocks)", gap.Start, gap.End, blockCount)
 
-		// First, verify the gap actually exists by checking a sample block
-		count, err := db.NewSelect().
-			Table("block").
-			Where("height = ?", gap.Start).
-			Count(context.Background())
-		if err == nil && count > 0 {
-			log.Printf("WARNING: Block %d already exists in database (%d records), skipping gap. This may indicate duplicate heights.", gap.Start, count)
-			continue
+		// Skip verification check if in manual mode (allow forced re-processing)
+		if startHeight == 0 && endHeight == 0 {
+			// Auto-detect mode: verify the gap actually exists by checking a sample block
+			count, err := db.NewSelect().
+				Table("block").
+				Where("height = ?", gap.Start).
+				Count(context.Background())
+			if err == nil && count > 0 {
+				log.Printf("WARNING: Block %d already exists in database (%d records), skipping gap. This may indicate duplicate heights.", gap.Start, count)
+				continue
+			}
 		}
 
 		if err := pdh.InitiateTransaction(); err != nil {

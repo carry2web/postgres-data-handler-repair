@@ -2,6 +2,9 @@
 
 *Note: This guide assumes you are already familiar with running a DeSo node. In this documentation, we introduce two new concepts—the state consumer interface and the Postgres data handler—and explain the minimal container setup required to extract on-chain state from your DeSo node into a PostgreSQL database.*
 
+> **📝 Block Gap Repair Tool**  
+> If you need to repair missing blocks in your database, see the [Block Gap Repair Documentation](README-REPAIR.md) for a dedicated tool that detects and fills gaps by fetching blocks from the DeSo node API.
+
 ---
 
 ## Overview
