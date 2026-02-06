@@ -292,8 +292,9 @@ func readBlockFromStateChange(indexFile, dataFile *os.File, height uint64) (*lib
 	}
 
 	// Decode the entry
-	entry, err := lib.DecodeEntry(entryBytes)
-	if err != nil {
+	entry := &lib.StateChangeEntry{}
+	rr := bytes.NewReader(entryBytes)
+	if _, err := lib.DecodeFromBytes(entry, rr); err != nil {
 		return nil, fmt.Errorf("failed to decode entry at height %d: %w", height, err)
 	}
 
