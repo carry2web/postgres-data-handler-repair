@@ -323,6 +323,11 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 			return fmt.Errorf("failed to read block at height %d: %w", height, err)
 		}
 
+		// Change operation type from Insert to Upsert for repair operations
+		// State-change files contain Insert operations from initial sync,
+		// but we need Upsert to handle existing blocks during repair
+		entry.OperationType = lib.DbOperationTypeUpsert
+
 		// Process the entry
 		if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
 			return fmt.Errorf("failed to process entry at height %d: %w", height, err)
