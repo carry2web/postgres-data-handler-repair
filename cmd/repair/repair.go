@@ -549,8 +549,9 @@ func main() {
 
 		// Hybrid strategy:
 		// - Small gaps (≤100 blocks): Sequential API calls
-		// - Medium gaps (101-10000 blocks): Parallel API calls (50 workers)
-		// - Large gaps (>10000 blocks): State-consumer file reading (10-100x faster)
+		// - Medium/Large gaps (>100 blocks): Parallel API calls (50 workers)
+		// Note: State-consumer file reading is not suitable for random-access repair
+		// because entry indices don't correlate with block heights
 		if blockCount <= 100 {
 			// Sequential processing for small gaps
 			log.Printf("Using sequential API processing for small gap...")
@@ -561,17 +562,11 @@ func main() {
 					continue
 				}
 			}
-		} else if blockCount <= 10000 {
-			// Parallel API processing for medium gaps
-			log.Printf("Using parallel API processing (50 workers) for medium gap...")
+		} else {
+			// Parallel API processing for medium and large gaps
+			log.Printf("Using parallel API processing (50 workers) for gap...")
 			if err := processGapParallel(nodeURL, gap.Start, gap.End, pdh, 50); err != nil {
 				log.Fatalf("processGapParallel: %v", err)
-			}
-		} else {
-			// State-consumer file reading for very large gaps (10-100x faster than API)
-			log.Printf("Using state-consumer file reading for large gap (10-100x faster)...")
-			if err := processGapFromStateChange(stateChangeDir, gap.Start, gap.End, pdh); err != nil {
-				log.Fatalf("processGapFromStateChange: %v", err)
 			}
 		}
 
