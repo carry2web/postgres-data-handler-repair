@@ -1,16 +1,20 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -232,6 +236,108 @@ func processBlockFromAPI(nodeURL string, height uint64, pdh *handler.PostgresDat
 	return nil
 }
 
+// openStateChangeFiles opens both the index and data files for reading
+func openStateChangeFiles(stateChangeDir string) (*os.File, *os.File, error) {
+	indexPath := filepath.Join(stateChangeDir, lib.StateChangeIndexFileName)
+	dataPath := filepath.Join(stateChangeDir, lib.StateChangeFileName)
+
+	indexFile, err := os.Open(indexPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open index file %s: %w", indexPath, err)
+	}
+
+	dataFile, err := os.Open(dataPath)
+	if err != nil {
+		indexFile.Close()
+		return nil, nil, fmt.Errorf("failed to open data file %s: %w", dataPath, err)
+	}
+
+	return indexFile, dataFile, nil
+}
+
+// readBlockFromStateChange reads a StateChangeEntry for a specific block height from state-change files
+func readBlockFromStateChange(indexFile, dataFile *os.File, height uint64) (*lib.StateChangeEntry, error) {
+	// Read the byte position from the index file
+	// Index file stores uint64 at position (height * 8)
+	entryIndexBytes := make([]byte, 8)
+	fileBytesPosition := int64(height * 8)
+
+	bytesRead, err := indexFile.ReadAt(entryIndexBytes, fileBytesPosition)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read index at height %d: %w", height, err)
+	}
+	if bytesRead != 8 {
+		return nil, fmt.Errorf("expected to read 8 bytes from index, got %d", bytesRead)
+	}
+
+	// Decode the byte position in the data file
+	dbIndex := binary.LittleEndian.Uint64(entryIndexBytes)
+
+	// Seek to the position in the data file
+	if _, err := dataFile.Seek(int64(dbIndex), io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek to position %d in data file: %w", dbIndex, err)
+	}
+
+	// Read the entry length (uvarint)
+	bufReader := bufio.NewReader(dataFile)
+	entryLength, err := lib.ReadUvarint(bufReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read entry length at height %d: %w", height, err)
+	}
+
+	// Read the entry bytes
+	entryBytes := make([]byte, entryLength)
+	if _, err := io.ReadFull(bufReader, entryBytes); err != nil {
+		return nil, fmt.Errorf("failed to read entry bytes at height %d: %w", height, err)
+	}
+
+	// Decode the entry
+	entry, err := lib.DecodeEntry(entryBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode entry at height %d: %w", height, err)
+	}
+
+	return entry, nil
+}
+
+// processGapFromStateChange processes a gap by reading directly from state-change files
+func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uint64, pdh *handler.PostgresDataHandler) error {
+	log.Printf("Opening state-change files from %s", stateChangeDir)
+
+	indexFile, dataFile, err := openStateChangeFiles(stateChangeDir)
+	if err != nil {
+		return fmt.Errorf("failed to open state-change files: %w", err)
+	}
+	defer indexFile.Close()
+	defer dataFile.Close()
+
+	log.Printf("Processing blocks %d -> %d from state-change files", startHeight, endHeight)
+
+	totalBlocks := endHeight - startHeight + 1
+	processedCount := uint64(0)
+
+	for height := startHeight; height <= endHeight; height++ {
+		entry, err := readBlockFromStateChange(indexFile, dataFile, height)
+		if err != nil {
+			return fmt.Errorf("failed to read block at height %d: %w", height, err)
+		}
+
+		// Process the entry
+		if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
+			return fmt.Errorf("failed to process entry at height %d: %w", height, err)
+		}
+
+		processedCount++
+		if processedCount%1000 == 0 {
+			progress := float64(processedCount) / float64(totalBlocks) * 100
+			log.Printf("Progress: %d/%d blocks (%.2f%%)", processedCount, totalBlocks, progress)
+		}
+	}
+
+	log.Printf("Successfully processed %d blocks from state-change files", processedCount)
+	return nil
+}
+
 // processGapParallel fetches and processes blocks in parallel using worker pool
 func processGapParallel(nodeURL string, startHeight, endHeight uint64, pdh *handler.PostgresDataHandler, workers int) error {
 	type blockJob struct {
@@ -362,6 +468,13 @@ func main() {
 	}
 	log.Printf("Using DeSo node URL: %s", nodeURL)
 
+	// Get state-change directory (optional, defaults to /db)
+	stateChangeDir := viper.GetString("STATE_CHANGE_DIR")
+	if stateChangeDir == "" {
+		stateChangeDir = "/db"
+	}
+	log.Printf("State-change directory: %s", stateChangeDir)
+
 	// Choose network params
 	params := &lib.DeSoMainnetParams
 	if viper.GetBool("IS_TESTNET") {
@@ -402,10 +515,13 @@ func main() {
 			log.Fatalf("InitiateTransaction: %v", err)
 		}
 
-		// For small gaps, process sequentially
-		// For large gaps, use parallel fetching for speed
+		// Hybrid strategy:
+		// - Small gaps (≤100 blocks): Sequential API calls
+		// - Medium gaps (101-10000 blocks): Parallel API calls (50 workers)
+		// - Large gaps (>10000 blocks): State-consumer file reading (10-100x faster)
 		if blockCount <= 100 {
 			// Sequential processing for small gaps
+			log.Printf("Using sequential API processing for small gap...")
 			for h := gap.Start; h <= gap.End; h++ {
 				log.Printf("Processing height %d...", h)
 				if err := processBlockFromAPI(nodeURL, h, pdh); err != nil {
@@ -413,11 +529,17 @@ func main() {
 					continue
 				}
 			}
-		} else {
-			// Parallel processing for large gaps
-			log.Printf("Using parallel processing (50 workers) for large gap...")
+		} else if blockCount <= 10000 {
+			// Parallel API processing for medium gaps
+			log.Printf("Using parallel API processing (50 workers) for medium gap...")
 			if err := processGapParallel(nodeURL, gap.Start, gap.End, pdh, 50); err != nil {
 				log.Fatalf("processGapParallel: %v", err)
+			}
+		} else {
+			// State-consumer file reading for very large gaps (10-100x faster than API)
+			log.Printf("Using state-consumer file reading for large gap (10-100x faster)...")
+			if err := processGapFromStateChange(stateChangeDir, gap.Start, gap.End, pdh); err != nil {
+				log.Fatalf("processGapFromStateChange: %v", err)
 			}
 		}
 
