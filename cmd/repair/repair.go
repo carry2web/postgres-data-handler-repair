@@ -360,7 +360,7 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 	return nil
 }
 
-// processGapParallel fetches and processes blocks in parallel using worker pool
+// processGapParallel fetches and processes blocks in parallel using streaming batches
 func processGapParallel(nodeURL string, startHeight, endHeight uint64, pdh *handler.PostgresDataHandler, workers int) error {
 	type blockJob struct {
 		height uint64
@@ -371,99 +371,111 @@ func processGapParallel(nodeURL string, startHeight, endHeight uint64, pdh *hand
 		err    error
 	}
 
-	jobs := make(chan blockJob, workers*2)
-	results := make(chan blockResult, workers*2)
+	totalBlocks := endHeight - startHeight + 1
+	fetchBatchSize := uint64(50000)  // Fetch 50k blocks at a time
+	commitBatchSize := uint64(10000) // Commit every 10k blocks
 
-	// Start workers
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-			for job := range jobs {
-				block, blockHash, err := fetchBlockByHeight(nodeURL, job.height)
-				if err != nil {
-					results <- blockResult{height: job.height, err: err}
-					continue
+	blocksCommitted := uint64(0)
+
+	// Process in fetch batches for better progress visibility
+	for batchStart := startHeight; batchStart <= endHeight; batchStart += fetchBatchSize {
+		batchEnd := batchStart + fetchBatchSize - 1
+		if batchEnd > endHeight {
+			batchEnd = endHeight
+		}
+
+		log.Printf("Fetching batch: heights %d -> %d", batchStart, batchEnd)
+
+		jobs := make(chan blockJob, workers*2)
+		results := make(chan blockResult, workers*2)
+
+		// Start workers
+		var wg sync.WaitGroup
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func(workerID int) {
+				defer wg.Done()
+				for job := range jobs {
+					block, blockHash, err := fetchBlockByHeight(nodeURL, job.height)
+					if err != nil {
+						results <- blockResult{height: job.height, err: err}
+						continue
+					}
+
+					// Use the block hash from the API (don't compute it)
+					blockEntry := &lib.StateChangeEntry{
+						OperationType: lib.DbOperationTypeUpsert,
+						KeyBytes:      blockHash[:],
+						Encoder:       block,
+						BlockHeight:   job.height,
+					}
+					results <- blockResult{height: job.height, entry: blockEntry, err: nil}
 				}
+			}(i)
+		}
 
-				// Use the block hash from the API (don't compute it)
-				blockEntry := &lib.StateChangeEntry{
-					OperationType: lib.DbOperationTypeUpsert,
-					KeyBytes:      blockHash[:],
-					Encoder:       block,
-					BlockHeight:   job.height,
+		// Send jobs for this batch
+		go func() {
+			for h := batchStart; h <= batchEnd; h++ {
+				jobs <- blockJob{height: h}
+			}
+			close(jobs)
+		}()
+
+		// Close results when all workers done
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		// Collect results for this batch
+		blocks := make(map[uint64]*lib.StateChangeEntry)
+		var errors []error
+
+		for result := range results {
+			if result.err != nil {
+				log.Printf("WARNING: Failed to fetch block %d: %v", result.height, result.err)
+				errors = append(errors, result.err)
+				continue
+			}
+			blocks[result.height] = result.entry
+		}
+
+		if len(errors) > 0 {
+			return fmt.Errorf("failed to fetch %d blocks in batch %d->%d", len(errors), batchStart, batchEnd)
+		}
+
+		// Process blocks in height order with commits
+		log.Printf("Processing %d fetched blocks...", len(blocks))
+		for h := batchStart; h <= batchEnd; h++ {
+			entry, ok := blocks[h]
+			if !ok {
+				return fmt.Errorf("missing block %d", h)
+			}
+
+			if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
+				return fmt.Errorf("failed to process block %d: %w", h, err)
+			}
+
+			blocksCommitted++
+
+			// Commit every commitBatchSize blocks and at the end
+			if blocksCommitted%commitBatchSize == 0 || h == endHeight {
+				if err := pdh.CommitTransaction(); err != nil {
+					return fmt.Errorf("failed to commit at block %d: %w", h, err)
 				}
-				results <- blockResult{height: job.height, entry: blockEntry, err: nil}
-			}
-		}(i)
-	}
+				log.Printf("✓ Committed: %d/%d blocks (%.2f%%)",
+					blocksCommitted, totalBlocks, float64(blocksCommitted)/float64(totalBlocks)*100)
 
-	// Send jobs
-	go func() {
-		for h := startHeight; h <= endHeight; h++ {
-			jobs <- blockJob{height: h}
-		}
-		close(jobs)
-	}()
-
-	// Close results when all workers done
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Collect results and process in order
-	blockCount := endHeight - startHeight + 1
-	blocks := make(map[uint64]*lib.StateChangeEntry)
-	var errors []error
-
-	for result := range results {
-		if result.err != nil {
-			log.Printf("WARNING: Failed to fetch block %d: %v", result.height, result.err)
-			errors = append(errors, result.err)
-			continue
-		}
-		blocks[result.height] = result.entry
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("failed to fetch %d blocks", len(errors))
-	}
-
-	// Process blocks in height order with batch commits
-	log.Printf("Fetched %d blocks, now inserting into database...", len(blocks))
-	batchSize := uint64(10000)
-	blocksProcessed := uint64(0)
-	
-	for h := startHeight; h <= endHeight; h++ {
-		entry, ok := blocks[h]
-		if !ok {
-			return fmt.Errorf("missing block %d", h)
-		}
-
-		if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
-			return fmt.Errorf("failed to process block %d: %w", h, err)
-		}
-
-		blocksProcessed++
-		
-		// Commit every batchSize blocks and at the end
-		if blocksProcessed%batchSize == 0 || h == endHeight {
-			if err := pdh.CommitTransaction(); err != nil {
-				return fmt.Errorf("failed to commit at block %d: %w", h, err)
-			}
-			log.Printf("Progress: %d/%d blocks committed to database (%.2f%%)", 
-				blocksProcessed, blockCount, float64(blocksProcessed)/float64(blockCount)*100)
-			
-			// Start new transaction if not at end
-			if h < endHeight {
-				if err := pdh.InitiateTransaction(); err != nil {
-					return fmt.Errorf("failed to start new transaction at block %d: %w", h, err)
+				// Start new transaction if not at end
+				if h < endHeight {
+					if err := pdh.InitiateTransaction(); err != nil {
+						return fmt.Errorf("failed to start new transaction at block %d: %w", h, err)
+					}
 				}
+			} else if blocksCommitted%1000 == 0 {
+				log.Printf("Progress: %d/%d blocks processed", blocksCommitted, totalBlocks)
 			}
-		} else if blocksProcessed%1000 == 0 {
-			log.Printf("Progress: %d/%d blocks processed", blocksProcessed, blockCount)
 		}
 	}
 
@@ -605,7 +617,7 @@ func main() {
 				log.Fatalf("CommitTransaction: %v", err)
 			}
 		}
-		
+
 		log.Printf("Successfully repaired gap %d -> %d", gap.Start, gap.End)
 	}
 	log.Println("Repair completed successfully")
