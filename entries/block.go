@@ -193,7 +193,9 @@ func bulkInsertBlockEntry(entries []*lib.StateChangeEntry, db bun.IDB, operation
 	blockQuery := db.NewInsert().Model(&pgBlockEntrySlice)
 
 	if operationType == lib.DbOperationTypeUpsert {
-		blockQuery = blockQuery.On("CONFLICT (block_hash) DO UPDATE")
+		// Handle conflicts on both block_hash and badger_key since they're both unique
+		blockQuery = blockQuery.On("CONFLICT (block_hash) DO UPDATE").
+			On("CONFLICT (badger_key) DO UPDATE")
 	}
 
 	if _, err := blockQuery.Exec(context.Background()); err != nil {
