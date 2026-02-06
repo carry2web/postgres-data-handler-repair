@@ -64,7 +64,8 @@ ORDER BY start;
 }
 
 // fetchBlockByHeight fetches a block from the DeSo node by height using the /api/v1/block endpoint.
-func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error) {
+// Returns the block and its hash (from the API, not computed).
+func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, *lib.BlockHash, error) {
 	url := fmt.Sprintf("%s/api/v1/block", nodeURL)
 	body, err := json.Marshal(map[string]interface{}{
 		"Height":    height,
@@ -100,6 +101,7 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 	// The API returns hashes as hex strings in specific field names
 	var apiResult struct {
 		Header struct {
+			BlockHashHex                 string `json:"BlockHashHex"`
 			Version                      uint32 `json:"Version"`
 			PrevBlockHashHex             string `json:"PrevBlockHashHex"`
 			TransactionMerkleRootHex     string `json:"TransactionMerkleRootHex"`
@@ -148,8 +150,11 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 		ProposedInView:        apiResult.Header.ProposedInView,
 	}
 
-	// TODO: Decode BLS fields if present (for PoS blocks)
-	// For now, leave them nil for old PoW blocks
+	// For PoS blocks, the API returns BLS fields as base64-encoded strings
+	// We need to decode them, but for now we'll use a simpler approach:
+	// Just fetch the raw block bytes from a different endpoint or skip BLS validation
+	// The state-consumer doesn't validate block hashes, it just stores them
+	// So we can leave BLS fields nil and use the block hash from the API response
 
 	// Decode transactions from hex
 	txns := make([]*lib.MsgDeSoTxn, len(apiResult.Transactions))
@@ -171,7 +176,13 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, error
 		Txns:   txns,
 	}
 
-	return block, nil
+	// Return the block hash from the API (don't compute it, as that requires BLS fields for PoS blocks)
+	blockHash, err := decodeBlockHash(apiResult.Header.BlockHashHex)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode block hash from API: %w", err)
+	}
+
+	return block, blockHash, nil
 }
 
 // decodeBlockHash converts a hex string to *lib.BlockHash
@@ -196,17 +207,12 @@ func decodeBlockHash(hexStr string) (*lib.BlockHash, error) {
 
 // processBlockFromAPI fetches and processes a block from the node API
 func processBlockFromAPI(nodeURL string, height uint64, pdh *handler.PostgresDataHandler) error {
-	block, err := fetchBlockByHeight(nodeURL, height)
+	block, blockHash, err := fetchBlockByHeight(nodeURL, height)
 	if err != nil {
 		return err
 	}
 
-	// Compute block hash for KeyBytes
-	blockHash, err := block.Hash()
-	if err != nil {
-		return fmt.Errorf("failed to compute block hash: %w", err)
-	}
-
+	// Use the block hash from the API (don't compute it)
 	// Create state change entry for the block
 	blockEntry := &lib.StateChangeEntry{
 		EncoderType:   lib.EncoderTypeBlock,
@@ -247,13 +253,13 @@ func processGapParallel(nodeURL string, startHeight, endHeight uint64, pdh *hand
 		go func(workerID int) {
 			defer wg.Done()
 			for job := range jobs {
-				block, err := fetchBlockByHeight(nodeURL, job.height)
+				block, blockHash, err := fetchBlockByHeight(nodeURL, job.height)
 				if err != nil {
 					results <- blockResult{height: job.height, err: err}
 					continue
 				}
 
-				blockHash, _ := block.Hash()
+				// Use the block hash from the API (don't compute it)
 				blockEntry := &lib.StateChangeEntry{
 					OperationType: lib.DbOperationTypeUpsert,
 					KeyBytes:      blockHash[:],
