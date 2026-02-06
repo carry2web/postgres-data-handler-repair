@@ -315,7 +315,6 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 	log.Printf("Processing blocks %d -> %d from state-change files", startHeight, endHeight)
 
 	totalBlocks := endHeight - startHeight + 1
-	processedCount := uint64(0)
 
 	// We need to scan sequentially through entries to find blocks in our range
 	// The index file is by entry number, not by block height
@@ -330,10 +329,10 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 		}
 
 		// Only process block entries in our height range
-		if entry.EncoderType == lib.EncoderTypeBlock && 
-		   entry.BlockHeight >= startHeight && 
-		   entry.BlockHeight <= endHeight {
-			
+		if entry.EncoderType == lib.EncoderTypeBlock &&
+			entry.BlockHeight >= startHeight &&
+			entry.BlockHeight <= endHeight {
+
 			// Change operation type from Insert to Upsert for repair operations
 			entry.OperationType = lib.DbOperationTypeUpsert
 
@@ -350,7 +349,7 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 		}
 
 		currentEntryIndex++
-		
+
 		// Safety: don't scan forever if we can't find all blocks
 		if currentEntryIndex > endHeight+1000000 {
 			return fmt.Errorf("scanned 1M entries past end height without finding all blocks (found %d/%d)", blocksFound, totalBlocks)
