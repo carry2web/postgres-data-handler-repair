@@ -513,14 +513,12 @@ func main() {
 		log.Printf("Processing gap: %d -> %d (%d blocks)", gap.Start, gap.End, blockCount)
 
 		// First, verify the gap actually exists by checking a sample block
-		var existingHeight uint64
-		err := db.NewSelect().
+		count, err := db.NewSelect().
 			Table("block").
-			Column("height").
 			Where("height = ?", gap.Start).
-			Scan(context.Background(), &existingHeight)
-		if err == nil {
-			log.Printf("WARNING: Block %d already exists in database, skipping gap", gap.Start)
+			Count(context.Background())
+		if err == nil && count > 0 {
+			log.Printf("WARNING: Block %d already exists in database (%d records), skipping gap. This may indicate duplicate heights.", gap.Start, count)
 			continue
 		}
 
