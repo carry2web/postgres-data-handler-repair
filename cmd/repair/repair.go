@@ -512,6 +512,18 @@ func main() {
 		blockCount := gap.End - gap.Start + 1
 		log.Printf("Processing gap: %d -> %d (%d blocks)", gap.Start, gap.End, blockCount)
 
+		// First, verify the gap actually exists by checking a sample block
+		var existingHeight uint64
+		err := db.NewSelect().
+			Table("block").
+			Column("height").
+			Where("height = ?", gap.Start).
+			Scan(context.Background(), &existingHeight)
+		if err == nil {
+			log.Printf("WARNING: Block %d already exists in database, skipping gap", gap.Start)
+			continue
+		}
+
 		if err := pdh.InitiateTransaction(); err != nil {
 			log.Fatalf("InitiateTransaction: %v", err)
 		}
