@@ -431,8 +431,11 @@ func processGapParallel(nodeURL string, startHeight, endHeight uint64, pdh *hand
 		return fmt.Errorf("failed to fetch %d blocks", len(errors))
 	}
 
-	// Process blocks in height order
+	// Process blocks in height order with batch commits
 	log.Printf("Fetched %d blocks, now inserting into database...", len(blocks))
+	batchSize := uint64(10000)
+	blocksProcessed := uint64(0)
+	
 	for h := startHeight; h <= endHeight; h++ {
 		entry, ok := blocks[h]
 		if !ok {
@@ -443,8 +446,24 @@ func processGapParallel(nodeURL string, startHeight, endHeight uint64, pdh *hand
 			return fmt.Errorf("failed to process block %d: %w", h, err)
 		}
 
-		if h%1000 == 0 {
-			log.Printf("Progress: %d/%d blocks processed", h-startHeight+1, blockCount)
+		blocksProcessed++
+		
+		// Commit every batchSize blocks and at the end
+		if blocksProcessed%batchSize == 0 || h == endHeight {
+			if err := pdh.CommitTransaction(); err != nil {
+				return fmt.Errorf("failed to commit at block %d: %w", h, err)
+			}
+			log.Printf("Progress: %d/%d blocks committed to database (%.2f%%)", 
+				blocksProcessed, blockCount, float64(blocksProcessed)/float64(blockCount)*100)
+			
+			// Start new transaction if not at end
+			if h < endHeight {
+				if err := pdh.InitiateTransaction(); err != nil {
+					return fmt.Errorf("failed to start new transaction at block %d: %w", h, err)
+				}
+			}
+		} else if blocksProcessed%1000 == 0 {
+			log.Printf("Progress: %d/%d blocks processed", blocksProcessed, blockCount)
 		}
 	}
 
@@ -476,7 +495,7 @@ func main() {
 	}
 	db := bun.NewDB(pgdb, pgdialect.New())
 	db.SetConnMaxLifetime(0)
-	
+
 	// Get worker count from environment (default 100)
 	workerCount := viper.GetInt("REPAIR_WORKERS")
 	if workerCount == 0 {
@@ -577,11 +596,16 @@ func main() {
 			if err := processGapParallel(nodeURL, gap.Start, gap.End, pdh, workerCount); err != nil {
 				log.Fatalf("processGapParallel: %v", err)
 			}
+			// Transaction is committed inside processGapParallel in batches
 		}
 
-		if err := pdh.CommitTransaction(); err != nil {
-			log.Fatalf("CommitTransaction: %v", err)
+		// For small gaps, commit here (large gaps commit inside processGapParallel)
+		if blockCount <= 100 {
+			if err := pdh.CommitTransaction(); err != nil {
+				log.Fatalf("CommitTransaction: %v", err)
+			}
 		}
+		
 		log.Printf("Successfully repaired gap %d -> %d", gap.Start, gap.End)
 	}
 	log.Println("Repair completed successfully")
