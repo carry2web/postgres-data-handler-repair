@@ -76,29 +76,29 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, *lib.
 		"FullBlock": true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal block request: %w", err)
+		return nil, nil, fmt.Errorf("marshal block request: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, nil, fmt.Errorf("read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(respBody))
+		return nil, nil, fmt.Errorf("status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	// Parse APIBlockResponse format
@@ -124,22 +124,22 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, *lib.
 		Error string `json:"Error"`
 	}
 	if err := json.Unmarshal(respBody, &apiResult); err != nil {
-		return nil, fmt.Errorf("unmarshal response: %w", err)
+		return nil, nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
 	if apiResult.Error != "" {
-		return nil, fmt.Errorf("API error: %s", apiResult.Error)
+		return nil, nil, fmt.Errorf("API error: %s", apiResult.Error)
 	}
 
 	// Decode hex strings to BlockHash
 	prevBlockHash, err := decodeBlockHash(apiResult.Header.PrevBlockHashHex)
 	if err != nil {
-		return nil, fmt.Errorf("decode prev block hash: %w", err)
+		return nil, nil, fmt.Errorf("decode prev block hash: %w", err)
 	}
 
 	txnMerkleRoot, err := decodeBlockHash(apiResult.Header.TransactionMerkleRootHex)
 	if err != nil {
-		return nil, fmt.Errorf("decode txn merkle root: %w", err)
+		return nil, nil, fmt.Errorf("decode txn merkle root: %w", err)
 	}
 
 	// Build the proper Header struct
@@ -165,12 +165,12 @@ func fetchBlockByHeight(nodeURL string, height uint64) (*lib.MsgDeSoBlock, *lib.
 	for i, txData := range apiResult.Transactions {
 		txnBytes, err := hex.DecodeString(txData.RawTransactionHex)
 		if err != nil {
-			return nil, fmt.Errorf("decode transaction %d hex: %w", i, err)
+			return nil, nil, fmt.Errorf("decode transaction %d hex: %w", i, err)
 		}
 
 		txn := &lib.MsgDeSoTxn{}
 		if err := txn.FromBytes(txnBytes); err != nil {
-			return nil, fmt.Errorf("parse transaction %d bytes: %w", i, err)
+			return nil, nil, fmt.Errorf("parse transaction %d bytes: %w", i, err)
 		}
 		txns[i] = txn
 	}
