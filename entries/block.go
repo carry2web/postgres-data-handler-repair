@@ -47,8 +47,16 @@ type PGBlockSigner struct {
 
 // Convert the UserAssociation DeSo encoder to the PG struct used by bun.
 func BlockEncoderToPGStruct(block *lib.MsgDeSoBlock, keyBytes []byte, params *lib.DeSoParams) (*PGBlockEntry, []*PGBlockSigner) {
-	blockHash, _ := block.Hash()
-	blockHashHex := hex.EncodeToString(blockHash[:])
+	// Use keyBytes if provided (from state-consumer or API), otherwise compute hash
+	var blockHashHex string
+	if len(keyBytes) > 0 {
+		blockHashHex = hex.EncodeToString(keyBytes)
+	} else {
+		blockHash, _ := block.Hash()
+		if blockHash != nil {
+			blockHashHex = hex.EncodeToString(blockHash[:])
+		}
+	}
 	qc := block.Header.GetQC()
 	blockSigners := []*PGBlockSigner{}
 	if !isInterfaceNil(qc) {
