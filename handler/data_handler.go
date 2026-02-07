@@ -114,6 +114,10 @@ func (postgresDataHandler *PostgresDataHandler) HandleEntryBatch(batchedEntries 
 		err = entries.BLSPublicKeyPKIDPairBatchOperation(batchedEntries, dbHandle, postgresDataHandler.Params, postgresDataHandler.CachedEntries)
 	case lib.EncoderTypeBlockNode:
 		err = entries.BlockNodeOperation(batchedEntries, dbHandle, postgresDataHandler.Params)
+	default:
+		// CRITICAL: If we reach here, an entry with an unrecognized or zero EncoderType was passed
+		return errors.Errorf("PostgresDataHandler.HandleEntryBatch: Unknown or missing EncoderType (%d) for entry at height %d",
+			encoderType, batchedEntries[0].BlockHeight)
 	}
 
 	if err != nil {

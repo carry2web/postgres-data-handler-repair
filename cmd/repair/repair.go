@@ -417,6 +417,7 @@ func processGapParallel(nodeURL string, startHeight, endHeight uint64, pdh *hand
 					// Use the block hash from the API (don't compute it)
 					blockEntry := &lib.StateChangeEntry{
 						OperationType: lib.DbOperationTypeUpsert,
+						EncoderType:   lib.EncoderTypeBlock,
 						KeyBytes:      blockHash[:],
 						Encoder:       block,
 						BlockHeight:   job.height,

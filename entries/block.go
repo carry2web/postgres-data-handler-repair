@@ -198,8 +198,18 @@ func bulkInsertBlockEntry(entries []*lib.StateChangeEntry, db bun.IDB, operation
 			On("CONFLICT (badger_key) DO UPDATE")
 	}
 
-	if _, err := blockQuery.Exec(context.Background()); err != nil {
+	result, err := blockQuery.Exec(context.Background())
+	if err != nil {
 		return errors.Wrapf(err, "entries.bulkInsertBlock: Error inserting entries")
+	}
+
+	// Verify that PostgreSQL confirmed the insert/update
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return errors.Wrapf(err, "entries.bulkInsertBlock: Error getting rows affected")
+	}
+	if rowsAffected != int64(len(pgBlockEntrySlice)) {
+		return errors.Errorf("entries.bulkInsertBlock: Expected %d rows affected, got %d", len(pgBlockEntrySlice), rowsAffected)
 	}
 
 	if err := bulkInsertTransactionEntry(pgTransactionEntrySlice, db, operationType); err != nil {
