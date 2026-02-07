@@ -63,10 +63,10 @@ first_gap AS (
     (SELECT MIN(height) FROM ordered) AS missing_count
   WHERE (SELECT MIN(height) FROM ordered) > 0
 )
-SELECT start, end, missing_count FROM internal_gaps
+SELECT "start", "end", missing_count FROM internal_gaps
 UNION ALL
-SELECT start, end, missing_count FROM first_gap
-ORDER BY start;
+SELECT "start", "end", missing_count FROM first_gap
+ORDER BY "start";
 	`
 	err := db.NewRaw(query).Scan(context.Background(), &rows)
 	if err != nil {
