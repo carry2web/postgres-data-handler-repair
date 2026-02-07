@@ -38,34 +38,21 @@ func detectGaps(db *bun.DB) ([]Gap, error) {
 	var rows []gapRow
 	query := `
 WITH ordered AS (
-  SELECT DISTINCT height
-  FROM block
+  SELECT DISTINCT height FROM block
 ),
 sequenced AS (
-  SELECT
+  SELECT 
     height,
     LEAD(height) OVER (ORDER BY height) AS next_height
   FROM ordered
-),
-internal_gaps AS (
-  SELECT
-    height + 1        AS start_height,
-    next_height - 1   AS end_height,
-    (next_height - height - 1) AS missing_count
-  FROM sequenced
-  WHERE next_height IS NOT NULL
-    AND next_height > height + 1
-),
-first_gap AS (
-  SELECT
-    0::bigint AS start_height,
-    (SELECT MIN(height) - 1 FROM ordered) AS end_height,
-    (SELECT MIN(height) FROM ordered) AS missing_count
-  WHERE (SELECT MIN(height) FROM ordered) > 0
 )
-SELECT start_height, end_height, missing_count FROM internal_gaps
-UNION ALL
-SELECT start_height, end_height, missing_count FROM first_gap
+SELECT
+  height + 1 AS start_height,
+  next_height - 1 AS end_height,
+  (next_height - height - 1) AS missing_count
+FROM sequenced
+WHERE next_height IS NOT NULL
+  AND next_height > height + 1
 ORDER BY start_height;
 	`
 	err := db.NewRaw(query).Scan(context.Background(), &rows)
