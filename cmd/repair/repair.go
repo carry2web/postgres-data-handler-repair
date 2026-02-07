@@ -34,7 +34,7 @@ type Gap struct{ Start, End uint64 }
 
 // detectGaps runs the user-provided SQL to return missing block ranges.
 func detectGaps(db *bun.DB) ([]Gap, error) {
-	type gapRow struct{ Start, End, MissingCount uint64 }
+	type gapRow struct{ StartHeight, EndHeight, MissingCount uint64 }
 	var rows []gapRow
 	query := `
 WITH ordered AS (
@@ -49,8 +49,8 @@ sequenced AS (
 ),
 internal_gaps AS (
   SELECT
-    height + 1        AS "start",
-    next_height - 1   AS "end",
+    height + 1        AS start_height,
+    next_height - 1   AS end_height,
     (next_height - height - 1) AS missing_count
   FROM sequenced
   WHERE next_height IS NOT NULL
@@ -58,15 +58,15 @@ internal_gaps AS (
 ),
 first_gap AS (
   SELECT
-    0::bigint AS "start",
-    (SELECT MIN(height) - 1 FROM ordered) AS "end",
+    0::bigint AS start_height,
+    (SELECT MIN(height) - 1 FROM ordered) AS end_height,
     (SELECT MIN(height) FROM ordered) AS missing_count
   WHERE (SELECT MIN(height) FROM ordered) > 0
 )
-SELECT "start", "end", missing_count FROM internal_gaps
+SELECT start_height, end_height, missing_count FROM internal_gaps
 UNION ALL
-SELECT "start", "end", missing_count FROM first_gap
-ORDER BY "start";
+SELECT start_height, end_height, missing_count FROM first_gap
+ORDER BY start_height;
 	`
 	err := db.NewRaw(query).Scan(context.Background(), &rows)
 	if err != nil {
@@ -74,7 +74,7 @@ ORDER BY "start";
 	}
 	var gaps []Gap
 	for _, r := range rows {
-		gaps = append(gaps, Gap{Start: r.Start, End: r.End})
+		gaps = append(gaps, Gap{Start: r.StartHeight, End: r.EndHeight})
 	}
 	return gaps, nil
 }
