@@ -207,9 +207,11 @@ func setupDb(pgURI string, threadLimit int, logQueries bool, readonlyUserPasswor
 	// Create a Bun db on top of postgres for querying.
 	db := bun.NewDB(pgdb, pgdialect.New())
 
-	db.SetConnMaxLifetime(0)
-
-	db.SetMaxIdleConns(threadLimit * 2)
+	// Set connection pool settings to prevent stale connections
+	db.SetMaxOpenConns(threadLimit * 2)
+	db.SetMaxIdleConns(threadLimit)
+	db.SetConnMaxLifetime(0)            // No lifetime limit
+	db.SetConnMaxIdleTime(300000000000) // 5 minutes (in nanoseconds)
 
 	//Print all queries to stdout for debugging.
 	if logQueries {
