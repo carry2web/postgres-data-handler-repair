@@ -72,7 +72,7 @@ func main() {
 	log.Printf("Index file size: %d bytes", indexStat.Size())
 	log.Printf("Data file size: %d bytes", dataStat.Size())
 
-	totalEntries := indexStat.Size() / 8
+	totalEntries := uint64(indexStat.Size() / 8)
 	log.Printf("Total entries in index: %d", totalEntries)
 
 	// Scan all entries to find block heights
@@ -86,16 +86,16 @@ func main() {
 	lastLoggedBlock := uint64(0)
 	progressInterval := uint64(1000000) // Log every 1 million blocks
 
-	for entryIdx := uint64(0); entryIdx < uint64(totalEntries); entryIdx++ {
+	for entryIdx := uint64(0); entryIdx < totalEntries; entryIdx++ {
 		if entryIdx%100000 == 0 && entryIdx > 0 {
 			pct := float64(entryIdx) / float64(totalEntries) * 100
 			elapsed := time.Since(startTime)
 			entriesPerSec := float64(entryIdx) / elapsed.Seconds()
 			remaining := time.Duration(float64(totalEntries-entryIdx)/entriesPerSec) * time.Second
-			
-			log.Printf("Progress: %d/%d entries (%.2f%%) - %d blocks found - Elapsed: %v - ETA: %v", 
+
+			log.Printf("Progress: %d/%d entries (%.2f%%) - %d blocks found - Elapsed: %v - ETA: %v",
 				entryIdx, totalEntries, pct, blockCount, elapsed.Round(time.Second), remaining.Round(time.Second))
-			
+
 			// Check if we've found another million blocks
 			blocksFoundSinceLastLog := blockCount - int(lastLoggedBlock)
 			if blocksFoundSinceLastLog >= int(progressInterval) {
@@ -165,12 +165,12 @@ func main() {
 	log.Printf("Total blocks found: %d", blockCount)
 	log.Printf("Min block height: %d", minHeight)
 	log.Printf("Max block height: %d", maxHeight)
-	
+
 	expectedBlocks := maxHeight - minHeight + 1
 	missingBlocks := expectedBlocks - uint64(blockCount)
 	log.Printf("Expected blocks (continuous range): %d", expectedBlocks)
 	log.Printf("Missing blocks: %d (%.2f%%)", missingBlocks, float64(missingBlocks)/float64(expectedBlocks)*100)
-	
+
 	log.Printf("\n=== Checking for gaps ===")
 	log.Printf("Scanning height range %d to %d...", minHeight, maxHeight)
 
@@ -207,7 +207,7 @@ func main() {
 	} else {
 		log.Printf("✗ Found %d gaps (total %d blocks missing)", len(gaps), totalMissingInGaps)
 		log.Printf("")
-		
+
 		// Write gaps to separate file for easy analysis
 		gapsFilePath := filepath.Join(stateChangeDir, "state-changes-gaps-detailed.txt")
 		gapsFile, err := os.Create(gapsFilePath)
@@ -218,11 +218,11 @@ func main() {
 			fmt.Fprintf(gapsFile, "=== State-Changes Gaps Analysis ===\n")
 			fmt.Fprintf(gapsFile, "Total gaps: %d\n", len(gaps))
 			fmt.Fprintf(gapsFile, "Total missing blocks: %d\n\n", totalMissingInGaps)
-			
+
 			for i, gap := range gaps {
 				line := fmt.Sprintf("Gap %d: heights %d -> %d (%d blocks missing)\n", i+1, gap.Start, gap.End, gap.Missing)
 				fmt.Fprint(gapsFile, line)
-				
+
 				// Only print first 100 and last 100 gaps to console
 				if i < 100 || i >= len(gaps)-100 {
 					log.Printf("  %s", line[:len(line)-1]) // Remove trailing newline
@@ -245,7 +245,7 @@ func main() {
 		h := heights[i]
 		log.Printf("  Height %d (entry index: %d)", h, blockHeights[h])
 	}
-	
+
 	// Final summary
 	elapsed := time.Since(startTime)
 	log.Printf("\n=== Analysis Complete ===")
