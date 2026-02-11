@@ -76,52 +76,61 @@ TABLES_TO_CHECK = [
     'nft_entry',
     'nft_bid_entry',
     'transaction_partitioned',
-    'block_entry'
+    'block'  # Note: block table doesn't have _entry suffix
 ]
 
 def get_table_counts(conn):
     """Get row counts for all transaction tables"""
     counts = {}
-    cursor = conn.cursor()
     
     for table in TABLES_TO_CHECK:
+        cursor = conn.cursor()
         try:
             cursor.execute(f"SELECT COUNT(*) FROM {table}")
             count = cursor.fetchone()[0]
             counts[table] = count
             print(f"  {table}: {count:,}")
         except Exception as e:
-            print(f"  {table}: ERROR - {e}")
+            # Rollback the failed transaction and continue
+            conn.rollback()
+            print(f"  {table}: SKIPPED - {str(e).split('LINE')[0].strip()}")
             counts[table] = None
+        finally:
+            cursor.close()
     
-    cursor.close()
     return counts
 
 def get_pg_stats(conn):
     """Get PostgreSQL insert/update/delete statistics"""
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT 
-            relname,
-            n_tup_ins,
-            n_tup_upd,
-            n_tup_del,
-            n_live_tup
-        FROM pg_stat_user_tables
-        WHERE relname IN %s
-        ORDER BY relname
-    """, (tuple(TABLES_TO_CHECK),))
     
-    stats = {}
-    for row in cursor.fetchall():
-        stats[row[0]] = {
-            'inserts': row[1],
-            'updates': row[2],
-            'deletes': row[3],
-            'live_rows': row[4]
-        }
+    try:
+        cursor.execute("""
+            SELECT 
+                relname,
+                n_tup_ins,
+                n_tup_upd,
+                n_tup_del,
+                n_live_tup
+            FROM pg_stat_user_tables
+            WHERE relname IN %s
+            ORDER BY relname
+        """, (tuple(TABLES_TO_CHECK),))
+        
+        stats = {}
+        for row in cursor.fetchall():
+            stats[row[0]] = {
+                'inserts': row[1],
+                'updates': row[2],
+                'deletes': row[3],
+                'live_rows': row[4]
+            }
+    except Exception as e:
+        print(f"\nWarning: Could not fetch pg_stats: {e}")
+        stats = {}
+    finally:
+        cursor.close()
     
-    cursor.close()
     return stats
 
 def save_snapshot(filename, counts, stats):
