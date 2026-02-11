@@ -67,8 +67,7 @@ go run cmd/repair/repair.go
 # 1. Install dependency
 pip install psycopg2-binary
 
-# 2. Update DB credentials in tools/measure_repair_impact.py
-# Edit DB_CONFIG section with your PostgreSQL connection details
+# 2. Database credentials will be read from data-handler.env automatically
 
 # 3. Take BEFORE snapshot
 python tools/measure_repair_impact.py before

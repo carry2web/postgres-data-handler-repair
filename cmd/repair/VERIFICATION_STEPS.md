@@ -11,6 +11,7 @@
 ### 1. Take BEFORE Snapshot
 
 ```bash
+# Database credentials will be read from data-handler.env automatically
 python tools/measure_repair_impact.py before
 ```
 

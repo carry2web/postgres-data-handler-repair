@@ -6,16 +6,65 @@ Measure the impact of repair by comparing database counts before/after
 import psycopg2
 import json
 import sys
+import os
 from datetime import datetime
+from pathlib import Path
 
-# Database connection settings
-DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'database': 'deso_data',
-    'user': 'postgres',
-    'password': 'postgres'  # Update with your actual password
-}
+def load_db_config():
+    """Load database configuration from data-handler.env file"""
+    # Look for data-handler.env in current directory or parent
+    env_file = Path('data-handler.env')
+    if not env_file.exists():
+        env_file = Path('../data-handler.env')
+    if not env_file.exists():
+        env_file = Path('../../data-handler.env')
+    
+    config = {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': int(os.getenv('DB_PORT', '5432')),
+        'database': os.getenv('DB_NAME', 'deso_data'),
+        'user': os.getenv('DB_USERNAME', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', 'postgres')
+    }
+    
+    # Try to load from env file if it exists
+    if env_file.exists():
+        print(f"Loading database config from: {env_file}")
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    
+                    if key == 'DB_HOST':
+                        config['host'] = value
+                    elif key == 'DB_PORT':
+                        config['port'] = int(value)
+                    elif key == 'DB_NAME':
+                        config['database'] = value
+                    elif key == 'DB_USERNAME':
+                        config['user'] = value
+                    elif key == 'DB_PASSWORD':
+                        config['password'] = value
+                    elif key == 'POSTGRES_URI':
+                        # Parse postgres://user:pass@host:port/dbname
+                        import re
+                        match = re.match(r'postgres(?:ql)?://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', value)
+                        if match:
+                            config['user'] = match.group(1)
+                            config['password'] = match.group(2)
+                            config['host'] = match.group(3)
+                            config['port'] = int(match.group(4))
+                            config['database'] = match.group(5)
+    else:
+        print("No data-handler.env file found, using environment variables or defaults")
+    
+    return config
+
+# Load database configuration
+DB_CONFIG = load_db_config()
 
 TABLES_TO_CHECK = [
     'follow_entry',
@@ -168,6 +217,9 @@ Usage:
   
   4. Compare snapshots:
      python measure_repair_impact.py compare
+
+Database connection will be read from data-handler.env file if present,
+otherwise from environment variables or defaults.
 """)
         sys.exit(1)
     
@@ -176,6 +228,7 @@ Usage:
     if command == "before":
         print("\n📸 Taking BEFORE snapshot...")
         print(f"{'='*80}\n")
+        print(f"Connecting to: {DB_CONFIG['user']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}\n")
         
         try:
             conn = psycopg2.connect(**DB_CONFIG)
@@ -188,12 +241,13 @@ Usage:
             print("   USE_STATE_CHANGES=true SKIP_BLOCKS=true REPAIR_START_HEIGHT=8606270 REPAIR_END_HEIGHT=8606370 go run cmd/repair/repair.go")
         except Exception as e:
             print(f"\n❌ Error: {e}")
-            print("\nMake sure to update DB_CONFIG in this script with your database credentials.")
+            print("\nMake sure data-handler.env file exists with correct database credentials.")
             sys.exit(1)
     
     elif command == "after":
         print("\n📸 Taking AFTER snapshot...")
         print(f"{'='*80}\n")
+        print(f"Connecting to: {DB_CONFIG['user']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}\n")
         
         try:
             conn = psycopg2.connect(**DB_CONFIG)
