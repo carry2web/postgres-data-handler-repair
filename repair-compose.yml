@@ -9,13 +9,12 @@ services:
       - NODE_URL=http://backend:17001
       - STATE_CHANGE_DIR=/db/state-changes
       - REPAIR_WORKERS=200
-      # Smart reprocessing options (uncomment to use)
-      - USE_STATE_CHANGES=true
-      - SKIP_BLOCKS=true
-      - REPAIR_START_HEIGHT=17137135
-      - REPAIR_END_HEIGHT=17137235
-      # Or use gap file
-      # - GAP_FILE=state-changes-gaps.txt
+      # API-based gap repair (works for any block height)
+      # - USE_STATE_CHANGES=false  # Default: use API
+      # - REPAIR_START_HEIGHT=8606270
+      # - REPAIR_END_HEIGHT=8606370
+      # Or use gap file for batch processing
+      - GAP_FILE=state-changes-gaps.txt
     volumes:
       # Use the same bind mount as your backend container
       - /opt/volumes/backend:/db:ro
