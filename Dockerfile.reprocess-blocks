@@ -1,0 +1,51 @@
+# Dockerfile for reprocess-blocks tool, matching repair tool pattern
+FROM alpine:latest AS reprocess-blocks-builder
+
+RUN apk update
+RUN apk upgrade
+RUN apk add --update bash go cmake g++ gcc git make vips-dev
+
+COPY --from=golang:1.24-alpine /usr/local/go/ /usr/local/go/
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+WORKDIR /reprocess-blocks/src
+
+COPY backend/go.mod backend/
+COPY backend/go.sum backend/
+COPY core/go.mod core/
+COPY core/go.sum core/
+COPY state-changes/go.mod state-changes/
+COPY state-changes/go.sum state-changes/
+
+WORKDIR /reprocess-blocks/src/reprocess-blocks
+RUN go mod download
+
+COPY backend/apis      backend/apis
+COPY backend/config    backend/config
+COPY backend/cmd       backend/cmd
+COPY backend/miner     backend/miner
+COPY backend/routes    backend/routes
+COPY backend/countries backend/countries
+COPY core/desohash     core/desohash
+COPY core/consensus    core/consensus
+COPY core/collections  core/collections
+COPY core/bls          core/bls
+COPY core/cmd          core/cmd
+COPY core/lib          core/lib
+COPY core/migrate      core/migrate
+COPY state-changes/    state-changes/
+COPY blocks-reprocess.txt ./blocks-reprocess.txt
+COPY data-handler.env ./data-handler.env
+COPY cmd/reprocess-blocks/reprocess-blocks.go ./reprocess-blocks.go
+
+RUN go mod tidy
+
+RUN CGO_CFLAGS="-std=gnu17 -D_GNU_SOURCE -Wno-error=implicit-function-declaration" GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/reprocess-blocks reprocess-blocks.go
+
+FROM alpine:3.18
+WORKDIR /app
+COPY --from=reprocess-blocks-builder /reprocess-blocks/src/reprocess-blocks/bin/reprocess-blocks .
+COPY --from=reprocess-blocks-builder /reprocess-blocks/src/reprocess-blocks/blocks-reprocess.txt ./blocks-reprocess.txt
+COPY --from=reprocess-blocks-builder /reprocess-blocks/src/reprocess-blocks/data-handler.env ./data-handler.env
+ENV DATA_HANDLER_ENV=./data-handler.env
+CMD ["./reprocess-blocks"]
