@@ -32,6 +32,36 @@ import (
 // Gap represents a contiguous range of missing block heights.
 type Gap struct{ Start, End uint64 }
 
+// parseGapsFromFile reads a gap list file like state-changes-gaps.txt
+// Format: "Gap 44865: heights 24195810 -> 24195811 (2 blocks missing)"
+func parseGapsFromFile(filename string) ([]Gap, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("open gap file: %w", err)
+	}
+	defer file.Close()
+
+	var gaps []Gap
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		var start, end uint64
+		// Parse lines like: "Gap 44865: heights 24195810 -> 24195811 (2 blocks missing)"
+		if _, err := fmt.Sscanf(line, "Gap %d: heights %d -> %d", new(int), &start, &end); err == nil {
+			gaps = append(gaps, Gap{Start: start, End: end})
+		} else {
+			// Try alternate format
+			if _, err := fmt.Sscanf(line, "%d -> %d", &start, &end); err == nil {
+				gaps = append(gaps, Gap{Start: start, End: end})
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("reading file: %w", err)
+	}
+	return gaps, nil
+}
+
 // detectGaps runs the user-provided SQL to return missing block ranges.
 func detectGaps(db *bun.DB) ([]Gap, error) {
 	type gapRow struct{ StartHeight, EndHeight, MissingCount uint64 }
@@ -209,29 +239,38 @@ func decodeBlockHash(hexStr string) (*lib.BlockHash, error) {
 }
 
 // processBlockFromAPI fetches and processes a block from the node API
+// With OperationType=Upsert, bulkInsertBlockEntry will extract and process all transactions
 func processBlockFromAPI(nodeURL string, height uint64, pdh *handler.PostgresDataHandler) error {
 	block, blockHash, err := fetchBlockByHeight(nodeURL, height)
 	if err != nil {
 		return err
 	}
 
+	log.Printf("Fetched block %d with %d transactions", height, len(block.Txns))
+
 	// Use the block hash from the API (don't compute it)
-	// Create state change entry for the block
+	// Create state change entry for the block with UPSERT operation
+	// CRITICAL: Using Upsert ensures bulkInsertBlockEntry processes the block
+	// bulkInsertBlockEntry will automatically:
+	// 1. Insert/update the block
+	// 2. Extract ALL transactions from block.Txns[]
+	// 3. Process each transaction (posts, follows, likes, diamonds, etc.)
+	// 4. Insert transactions into transaction table
 	blockEntry := &lib.StateChangeEntry{
 		EncoderType:   lib.EncoderTypeBlock,
-		OperationType: lib.DbOperationTypeUpsert,
+		OperationType: lib.DbOperationTypeUpsert, // UPSERT triggers transaction processing
 		Encoder:       block,
 		Block:         block,
 		BlockHeight:   height,
 		KeyBytes:      blockHash[:],
 	}
 
-	// Process the block entry
+	// Process the block entry - this processes the block AND all its transactions
 	if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{blockEntry}, false); err != nil {
 		return fmt.Errorf("failed to process block for height %d: %w", height, err)
 	}
 
-	log.Printf("Successfully processed block %d via API", height)
+	log.Printf("Successfully processed block %d via API (%d transactions)", height, len(block.Txns))
 	return nil
 }
 
@@ -301,7 +340,7 @@ func readBlockFromStateChange(indexFile, dataFile *os.File, height uint64) (*lib
 }
 
 // processGapFromStateChange processes a gap by reading directly from state-change files
-func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uint64, pdh *handler.PostgresDataHandler) error {
+func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uint64, pdh *handler.PostgresDataHandler, skipBlocks bool) error {
 	log.Printf("Opening state-change files from %s", stateChangeDir)
 
 	indexFile, dataFile, err := openStateChangeFiles(stateChangeDir)
@@ -311,51 +350,120 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 	defer indexFile.Close()
 	defer dataFile.Close()
 
-	log.Printf("Processing blocks %d -> %d from state-change files", startHeight, endHeight)
+	if skipBlocks {
+		log.Printf("Processing NON-BLOCK state changes for blocks %d -> %d from state-change files", startHeight, endHeight)
+		log.Printf("Skipping blocks (already in DB), processing: posts, likes, follows, diamonds, transactions, etc.")
+	} else {
+		log.Printf("Processing ALL state changes for blocks %d -> %d from state-change files", startHeight, endHeight)
+	}
 
-	totalBlocks := endHeight - startHeight + 1
+	// Track statistics
+	blocksFound := make(map[uint64]bool)
+	blocksSkipped := uint64(0)
+	entriesProcessed := uint64(0)
+	entriesSkipped := uint64(0)
+	totalEntries := uint64(0)
 
-	// We need to scan sequentially through entries to find blocks in our range
-	// The index file is by entry number, not by block height
-	// Start from the first entry at startHeight and scan forward
-	currentEntryIndex := startHeight
-	blocksFound := uint64(0)
-
-	for blocksFound < totalBlocks {
-		entry, err := readBlockFromStateChange(indexFile, dataFile, currentEntryIndex)
-		if err != nil {
-			return fmt.Errorf("failed to read entry at index %d: %w", currentEntryIndex, err)
+	// Scan through all entries in the state-change files
+	for {
+		// Read index entry (24 bytes: 8 offset + 8 length + 8 block height)
+		indexBytes := make([]byte, 24)
+		if _, err := io.ReadFull(indexFile, indexBytes); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("error reading index: %w", err)
 		}
 
-		// Only process block entries in our height range
-		if entry.EncoderType == lib.EncoderTypeBlock &&
-			entry.BlockHeight >= startHeight &&
-			entry.BlockHeight <= endHeight {
+		offset := binary.BigEndian.Uint64(indexBytes[0:8])
+		length := binary.BigEndian.Uint64(indexBytes[8:16])
+		blockHeight := binary.BigEndian.Uint64(indexBytes[16:24])
+		totalEntries++
 
-			// Change operation type from Insert to Upsert for repair operations
-			entry.OperationType = lib.DbOperationTypeUpsert
+		// Skip entries outside our range
+		if blockHeight < startHeight || blockHeight > endHeight {
+			continue
+		}
 
-			// Process the entry
-			if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
-				return fmt.Errorf("failed to process block at height %d: %w", entry.BlockHeight, err)
-			}
+		// Read the state change entry from data file
+		if _, err := dataFile.Seek(int64(offset), 0); err != nil {
+			return fmt.Errorf("seek error at offset %d: %w", offset, err)
+		}
 
-			blocksFound++
-			if blocksFound%1000 == 0 {
-				progress := float64(blocksFound) / float64(totalBlocks) * 100
-				log.Printf("Progress: %d/%d blocks (%.2f%%)", blocksFound, totalBlocks, progress)
+		entryBytes := make([]byte, length)
+		if _, err := io.ReadFull(dataFile, entryBytes); err != nil {
+			return fmt.Errorf("error reading entry data: %w", err)
+		}
+
+		// Decode the state change entry
+		entry := &lib.StateChangeEntry{}
+		if err := entry.FromBytes(blockHeight, entryBytes); err != nil {
+			log.Printf("WARNING: Failed to decode entry at block %d: %v", blockHeight, err)
+			continue
+		}
+
+		// Track blocks found
+		if entry.EncoderType == lib.EncoderTypeBlock {
+			blocksFound[blockHeight] = true
+
+			// Skip block entries if blocks already exist in DB
+			if skipBlocks {
+				blocksSkipped++
+				if blocksSkipped%1000 == 0 {
+					log.Printf("Found %d blocks in state-changes (skipped, already in DB)", blocksSkipped)
+				}
+				continue
 			}
 		}
 
-		currentEntryIndex++
+		// Change operation type from Insert to Upsert for repair operations
+		entry.OperationType = lib.DbOperationTypeUpsert
 
-		// Safety: don't scan forever if we can't find all blocks
-		if currentEntryIndex > endHeight+1000000 {
-			return fmt.Errorf("scanned 1M entries past end height without finding all blocks (found %d/%d)", blocksFound, totalBlocks)
+		// Process this entry
+		if err := pdh.HandleEntryBatch([]*lib.StateChangeEntry{entry}, false); err != nil {
+			log.Printf("WARNING: Failed to process entry for block %d, encoder type %v: %v", blockHeight, entry.EncoderType, err)
+			entriesSkipped++
+			continue
+		}
+
+		entriesProcessed++
+
+		// Log progress
+		if entriesProcessed%10000 == 0 {
+			log.Printf("Processed %d entries (skipped %d blocks, %d failed)", entriesProcessed, blocksSkipped, entriesSkipped)
+		}
+
+		// Commit periodically to avoid huge transactions
+		if entriesProcessed%10000 == 0 {
+			log.Printf("Committing batch after %d entries...", entriesProcessed)
+			if err := pdh.CommitTransaction(); err != nil {
+				return fmt.Errorf("commit transaction: %w", err)
+			}
+			if err := pdh.InitiateTransaction(); err != nil {
+				return fmt.Errorf("initiate transaction: %w", err)
+			}
 		}
 	}
 
-	log.Printf("Successfully processed %d blocks from state-change files", blocksFound)
+	log.Printf("Successfully processed %d state changes", entriesProcessed)
+	log.Printf("Found %d blocks in range (skipped: %d)", len(blocksFound), blocksSkipped)
+	log.Printf("Scanned %d total entries in state-change files", totalEntries)
+	log.Printf("Failed to process: %d entries", entriesSkipped)
+
+	// Verify all blocks in range were found
+	missingBlocks := uint64(0)
+	for h := startHeight; h <= endHeight; h++ {
+		if !blocksFound[h] {
+			missingBlocks++
+			if missingBlocks <= 10 {
+				log.Printf("WARNING: Block %d not found in state-change files", h)
+			}
+		}
+	}
+	if missingBlocks > 10 {
+		log.Printf("WARNING: %d additional blocks not found in state-change files", missingBlocks-10)
+	}
+
 	return nil
 }
 
@@ -562,8 +670,25 @@ func main() {
 	var gaps []Gap
 	startHeight := viper.GetUint64("REPAIR_START_HEIGHT")
 	endHeight := viper.GetUint64("REPAIR_END_HEIGHT")
+	gapFile := viper.GetString("GAP_FILE")
 
-	if startHeight > 0 || endHeight > 0 {
+	if gapFile != "" {
+		// Load gaps from file
+		var err error
+		gaps, err = parseGapsFromFile(gapFile)
+		if err != nil {
+			log.Fatalf("parseGapsFromFile: %v", err)
+		}
+		log.Printf("Loaded %d gap(s) from file: %s", len(gaps), gapFile)
+		for i, g := range gaps {
+			if i < 10 { // Show first 10
+				log.Printf("  Gap %d: %d -> %d (%d blocks)", i+1, g.Start, g.End, g.End-g.Start+1)
+			}
+		}
+		if len(gaps) > 10 {
+			log.Printf("  ... and %d more gaps", len(gaps)-10)
+		}
+	} else if startHeight > 0 || endHeight > 0 {
 		// Manual range specified
 		if startHeight == 0 {
 			startHeight = 0 // Allow starting from block 0
@@ -589,13 +714,27 @@ func main() {
 		}
 	}
 
+	// Check if we should use state-change files
+	useStateChanges := viper.GetBool("USE_STATE_CHANGES")
+	skipBlocks := viper.GetBool("SKIP_BLOCKS")
+
+	if useStateChanges {
+		log.Printf("Using state-change file processing")
+		if skipBlocks {
+			log.Printf("SKIP_BLOCKS=true: Will skip EncoderTypeBlock entries (blocks already in DB)")
+			log.Printf("This processes only transactions: posts, likes, follows, diamonds, etc.")
+		} else {
+			log.Printf("SKIP_BLOCKS=false: Will process ALL encoder types including blocks")
+		}
+	}
+
 	// Process each gap
 	for _, gap := range gaps {
 		blockCount := gap.End - gap.Start + 1
 		log.Printf("Processing gap: %d -> %d (%d blocks)", gap.Start, gap.End, blockCount)
 
-		// Skip verification check if in manual mode (allow forced re-processing)
-		if startHeight == 0 && endHeight == 0 {
+		// Skip verification check if in manual mode or using state-changes
+		if startHeight == 0 && endHeight == 0 && !useStateChanges {
 			// Auto-detect mode: verify the gap actually exists by checking a sample block
 			count, err := db.NewSelect().
 				Table("block").
@@ -611,34 +750,45 @@ func main() {
 			log.Fatalf("InitiateTransaction: %v", err)
 		}
 
-		// Hybrid strategy:
-		// - Small gaps (≤100 blocks): Sequential API calls
-		// - Medium/Large gaps (>100 blocks): Parallel API calls (50 workers)
-		// Note: State-consumer file reading is not suitable for random-access repair
-		// because entry indices don't correlate with block heights
-		if blockCount <= 100 {
-			// Sequential processing for small gaps
-			log.Printf("Using sequential API processing for small gap...")
-			for h := gap.Start; h <= gap.End; h++ {
-				log.Printf("Processing height %d...", h)
-				if err := processBlockFromAPI(nodeURL, h, pdh); err != nil {
-					log.Printf("WARNING: Failed to process block %d: %v", h, err)
-					continue
-				}
+		if useStateChanges {
+			// Process from state-change files
+			log.Printf("Processing from state-change files: %s", stateChangeDir)
+			if err := processGapFromStateChange(stateChangeDir, gap.Start, gap.End, pdh, skipBlocks); err != nil {
+				log.Fatalf("processGapFromStateChange: %v", err)
 			}
-		} else {
-			// Parallel API processing for medium and large gaps
-			log.Printf("Using parallel API processing (%d workers) for gap...", workerCount)
-			if err := processGapParallel(nodeURL, gap.Start, gap.End, pdh, workerCount); err != nil {
-				log.Fatalf("processGapParallel: %v", err)
-			}
-			// Transaction is committed inside processGapParallel in batches
-		}
-
-		// For small gaps, commit here (large gaps commit inside processGapParallel)
-		if blockCount <= 100 {
 			if err := pdh.CommitTransaction(); err != nil {
 				log.Fatalf("CommitTransaction: %v", err)
+			}
+		} else {
+			// Process blocks from API
+			// Each block will be processed with ALL its transactions via bulkInsertBlockEntry
+			// Hybrid strategy:
+			// - Small gaps (≤100 blocks): Sequential API calls
+			// - Medium/Large gaps (>100 blocks): Parallel API calls
+			if blockCount <= 100 {
+				// Sequential processing for small gaps
+				log.Printf("Using sequential API processing for small gap...")
+				for h := gap.Start; h <= gap.End; h++ {
+					log.Printf("Processing height %d...", h)
+					if err := processBlockFromAPI(nodeURL, h, pdh); err != nil {
+						log.Printf("WARNING: Failed to process block %d: %v", h, err)
+						continue
+					}
+				}
+			} else {
+				// Parallel API processing for medium and large gaps
+				log.Printf("Using parallel API processing (%d workers) for gap...", workerCount)
+				if err := processGapParallel(nodeURL, gap.Start, gap.End, pdh, workerCount); err != nil {
+					log.Fatalf("processGapParallel: %v", err)
+				}
+				// Transaction is committed inside processGapParallel in batches
+			}
+
+			// For small gaps, commit here (large gaps commit inside processGapParallel)
+			if blockCount <= 100 {
+				if err := pdh.CommitTransaction(); err != nil {
+					log.Fatalf("CommitTransaction: %v", err)
+				}
 			}
 		}
 

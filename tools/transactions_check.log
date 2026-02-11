@@ -1,0 +1,40 @@
+GraphQL Endpoint Comparison Tool
+Endpoint 1: https://graphql.safetynet.social/graphql
+Endpoint 2: https://graphql-prod.deso.com/graphql
+Log file: C:\Users\info\safetynet\postgres-data-handler\tools\transactions_check.log
+
+
+Executing query on both endpoints...
+
+================================================================================
+Query: recent_diamonds
+================================================================================
+
+Variables:
+{
+  "first": 10
+}
+
+Response Times:
+  SafetyNet: 0.263s
+  DeSo Prod: 0.488s
+  Difference: 0.225s
+
+[ERROR] ERRORS DETECTED
+
+SafetyNet Error:
+{
+  "error": "400 Error: Bad Request",
+  "details": "{\"errors\":[{\"message\":\"Value \\\"BADGER_ID_DESC\\\" does not exist in \\\"DiamondsOrderBy\\\" enum. Did you mean the enum value \\\"SENDER_PKID_DESC\\\"?\",\"locations\":[{\"line\":1,\"column\":70}]},{\"message\":\"Cannot query field \\\"senderPublicKey\\\" on type \\\"Diamond\\\". Did you mean \\\"senderPkid\\\"?\",\"locations\":[{\"line\":1,\"column\":96}]},{\"message\":\"Cannot query field \\\"receiverPublicKey\\\" on type \\\"Diamond\\\". Did you mean \\\"receiverPkid\\\"?\",\"locations\":[{\"line\":1,\"column\":112}]}]}"
+}
+
+DeSo Prod Error:
+{
+  "error": "400 Error: Bad Request",
+  "details": "{\"errors\":[{\"message\":\"Value \\\"BADGER_ID_DESC\\\" does not exist in \\\"DiamondsOrderBy\\\" enum. Did you mean the enum value \\\"SENDER_PKID_DESC\\\"?\",\"locations\":[{\"line\":1,\"column\":70}]},{\"message\":\"Cannot query field \\\"senderPublicKey\\\" on type \\\"Diamond\\\". Did you mean \\\"senderPkid\\\"?\",\"locations\":[{\"line\":1,\"column\":96}]},{\"message\":\"Cannot query field \\\"receiverPublicKey\\\" on type \\\"Diamond\\\". Did you mean \\\"receiverPkid\\\"?\",\"locations\":[{\"line\":1,\"column\":112}]}]}"
+}
+
+================================================================================
+Comparison Complete
+================================================================================
+

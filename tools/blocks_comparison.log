@@ -1,0 +1,33 @@
+GraphQL Endpoint Comparison Tool
+Endpoint 1: https://graphql.safetynet.social/graphql
+Endpoint 2: https://graphql-prod.deso.com/graphql
+Log file: C:\Users\info\safetynet\postgres-data-handler\tools\blocks_comparison.log
+
+
+Executing query on both endpoints...
+
+================================================================================
+Query: latest_blocks
+================================================================================
+
+Variables:
+{
+  "first": 5
+}
+
+Response Times:
+  SafetyNet: 13.741s
+  DeSo Prod: 30.335s
+  Difference: 16.594s
+
+[ERROR] ERRORS DETECTED
+
+DeSo Prod Error:
+{
+  "error": "HTTPSConnectionPool(host='graphql-prod.deso.com', port=443): Read timed out. (read timeout=30)"
+}
+
+================================================================================
+Comparison Complete
+================================================================================
+

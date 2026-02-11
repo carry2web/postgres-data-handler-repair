@@ -1,0 +1,439 @@
+GraphQL Endpoint Comparison Tool
+Endpoint 1: https://graphql.safetynet.social/graphql
+Endpoint 2: https://graphql-prod.deso.com/graphql
+Log file: C:\Users\info\safetynet\postgres-data-handler\tools\full_comparison_extended.log
+
+
+Executing query on both endpoints...
+
+================================================================================
+Query: account_stats
+================================================================================
+
+Variables:
+{
+  "first": 10,
+  "condition": {
+    "publicKey": "BC1YLh8heSjLGcmd7k8p2L4C63r4PhGCdESTcVNDDvTbrrP8NaidpTF"
+  }
+}
+
+Response Times:
+  SafetyNet: 0.357s
+  DeSo Prod: 0.551s
+  Difference: 0.194s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['accounts']['nodes'][0]['followers']['totalCount']
+    SafetyNet: 1268
+    DeSo Prod: 1350
+    Difference: 82 (+6.47%)
+
+  Path: root['data']['accounts']['nodes'][0]['following']['totalCount']
+    SafetyNet: 375
+    DeSo Prod: 385
+    Difference: 10 (+2.67%)
+
+Executing query on both endpoints...
+
+================================================================================
+Query: recent_posts
+================================================================================
+
+Variables:
+{
+  "first": 5
+}
+
+Response Times:
+  SafetyNet: 1.057s
+  DeSo Prod: 16.251s
+  Difference: 15.194s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['posts']['totalCount']
+    SafetyNet: 17758421
+    DeSo Prod: 17963369
+    Difference: 204948 (+1.15%)
+
+Executing query on both endpoints...
+
+================================================================================
+Query: top_profiles
+================================================================================
+
+Variables:
+{
+  "first": 10
+}
+
+Response Times:
+  SafetyNet: 5.826s
+  DeSo Prod: 19.727s
+  Difference: 13.902s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['accounts']['nodes'][4]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsUxiNnfbEpy8gNR7uX22tJxskUSmo6EyaoLMnDehuC3A2GwK', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffscBsvvn8cKULFFdecPXTMJcToR4j3TsCGvHhjgxT4yx7Uq6i', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+  Path: root['data']['accounts']['nodes'][2]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsUvqFyWr8br4vcLRphnj9pugMUFswkEvNct7n9BurTjX2req', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffsb1kCCq7ZFhiN5SGkRMuQMgMRPZ1vFc9LzGSS37bnnM8R1fk', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+  Path: root['data']['accounts']['nodes'][3]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsUxQjrTXmUwpkWo6DcegkNvsaMdtTAL8AKuDp3rGEZeLASZG', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffsbiHiuzCvHcpdAYUTYNB27TmKTgCsW5Kv5MJJAnVrdwWw6GY', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+  Path: root['data']['accounts']['nodes'][5]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsVR4dCdzbES5dGdqGaaV1cipKTymScCw2L9PSWqdHWMxxHT5', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffscf7rnAbQuSp9NMNK7PbzEpoxTjzXNB434UcmP8ctVoAkLU6', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+  Path: root['data']['accounts']['nodes'][7]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsVveckdC74U6E3tfFJ4CD3bprmXynwvGgoZwxCZwAX2an4j3', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffscfyAuY9ZiqAwujQdzSxiRgDGwMcuSmq1ePK2vjeHdkTfxWD', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+  Path: root['data']['accounts']['nodes'][8]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsW96GDuWqDXGZA6uoF4tsYJUArpv4z2GwwnYL2GzwgPFXXo2', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffscgXWtCVUetZry2c9RGNAJn6bhpky1QqxPS96RzqzUxTvMyk', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+  Path: root['data']['accounts']['nodes'][6]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsVd2Aj3qRaM2UMtV3BzoRAyzEchJydRdcNQX88HxFWz8befJ', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffscFBcVuCcQjDywzKgevfkLMtMTtiux2A4XEXTJnCbDJneF2S', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+  Path: root['data']['accounts']['nodes'][9]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsWCjVNUZkn2SQGK7JprfjduP143gDbMmgpZWYCJu2J9BaSUp', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffscKTH65nLdWSN6qMYu8k5QaW72HaPD9E8xHPhz6K3VZUp5Yi', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+  Path: root['data']['accounts']['nodes'][1]
+    SafetyNet: {'username': None, 'publicKey': 'BC1YLffsUdLjJheuG79YAZJk5NCjGYwMwgTKwVDNhQwcPtVJZyQgmJM', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+    DeSo Prod: {'username': None, 'publicKey': 'BC1YLffsafvm1VknU8hycSpMQoZR4tnG4bY1PDNf2VccVN7TsPEKhDV', 'coinPriceDesoNanos': None, 'followers': {'totalCount': 0}}
+
+Executing query on both endpoints...
+
+================================================================================
+Query: user_posts
+================================================================================
+
+Variables:
+{
+  "publicKey": "BC1YLh8heSjLGcmd7k8p2L4C63r4PhGCdESTcVNDDvTbrrP8NaidpTF",
+  "first": 5
+}
+
+Response Times:
+  SafetyNet: 0.266s
+  DeSo Prod: 0.547s
+  Difference: 0.282s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['posts']['totalCount']
+    SafetyNet: 6308
+    DeSo Prod: 6564
+    Difference: 256 (+4.06%)
+
+Executing query on both endpoints...
+
+================================================================================
+Query: follower_stats
+================================================================================
+
+Variables:
+{
+  "publicKey": "BC1YLh8heSjLGcmd7k8p2L4C63r4PhGCdESTcVNDDvTbrrP8NaidpTF"
+}
+
+Response Times:
+  SafetyNet: 0.255s
+  DeSo Prod: 0.480s
+  Difference: 0.226s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['accounts']['nodes'][0]['followers']['totalCount']
+    SafetyNet: 1268
+    DeSo Prod: 1350
+    Difference: 82 (+6.47%)
+
+  Path: root['data']['accounts']['nodes'][0]['following']['totalCount']
+    SafetyNet: 375
+    DeSo Prod: 385
+    Difference: 10 (+2.67%)
+
+Executing query on both endpoints...
+
+================================================================================
+Query: block_count
+================================================================================
+
+Variables:
+{}
+
+Response Times:
+  SafetyNet: 17.952s
+  DeSo Prod: 30.308s
+  Difference: 12.356s
+
+[ERROR] ERRORS DETECTED
+
+DeSo Prod Error:
+{
+  "error": "HTTPSConnectionPool(host='graphql-prod.deso.com', port=443): Read timed out. (read timeout=30)"
+}
+
+Executing query on both endpoints...
+
+================================================================================
+Query: latest_blocks
+================================================================================
+
+Variables:
+{
+  "first": 5
+}
+
+Response Times:
+  SafetyNet: 0.333s
+  DeSo Prod: 0.508s
+  Difference: 0.174s
+
+[ERROR] ERRORS DETECTED
+
+SafetyNet Error:
+{
+  "error": "400 Error: Bad Request",
+  "details": "{\"errors\":[{\"message\":\"Cannot query field \\\"hash\\\" on type \\\"Block\\\".\",\"locations\":[{\"line\":1,\"column\":106}]}]}"
+}
+
+DeSo Prod Error:
+{
+  "error": "400 Error: Bad Request",
+  "details": "{\"errors\":[{\"message\":\"Cannot query field \\\"hash\\\" on type \\\"Block\\\".\",\"locations\":[{\"line\":1,\"column\":106}]}]}"
+}
+
+Executing query on both endpoints...
+
+================================================================================
+Query: transaction_count
+================================================================================
+
+Variables:
+{}
+
+Response Times:
+  SafetyNet: 29.438s
+  DeSo Prod: 30.328s
+  Difference: 0.890s
+
+[ERROR] ERRORS DETECTED
+
+DeSo Prod Error:
+{
+  "error": "HTTPSConnectionPool(host='graphql-prod.deso.com', port=443): Read timed out. (read timeout=30)"
+}
+
+Executing query on both endpoints...
+
+================================================================================
+Query: recent_transactions
+================================================================================
+
+Variables:
+{
+  "first": 10
+}
+
+Response Times:
+  SafetyNet: 0.273s
+  DeSo Prod: 0.461s
+  Difference: 0.188s
+
+[ERROR] ERRORS DETECTED
+
+SafetyNet Error:
+{
+  "error": "400 Error: Bad Request",
+  "details": "{\"errors\":[{\"message\":\"Cannot query field \\\"txnHash\\\" on type \\\"Transaction\\\".\",\"locations\":[{\"line\":1,\"column\":119}]}]}"
+}
+
+DeSo Prod Error:
+{
+  "error": "400 Error: Bad Request",
+  "details": "{\"errors\":[{\"message\":\"Cannot query field \\\"txnHash\\\" on type \\\"Transaction\\\".\",\"locations\":[{\"line\":1,\"column\":119}]}]}"
+}
+
+Executing query on both endpoints...
+
+================================================================================
+Query: profile_count
+================================================================================
+
+Variables:
+{}
+
+Response Times:
+  SafetyNet: 0.191s
+  DeSo Prod: 0.522s
+  Difference: 0.331s
+
+[OK] RESULTS MATCH EXACTLY
+
+Executing query on both endpoints...
+
+================================================================================
+Query: total_accounts
+================================================================================
+
+Variables:
+{}
+
+Response Times:
+  SafetyNet: 1.556s
+  DeSo Prod: 3.979s
+  Difference: 2.423s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['accounts']['totalCount']
+    SafetyNet: 10486152
+    DeSo Prod: 9638739
+    Difference: -847413 (-8.08%)
+
+Executing query on both endpoints...
+
+================================================================================
+Query: verified_profiles
+================================================================================
+
+Variables:
+{
+  "first": 10
+}
+
+Response Times:
+  SafetyNet: 0.282s
+  DeSo Prod: 0.475s
+  Difference: 0.193s
+
+[ERROR] ERRORS DETECTED
+
+SafetyNet Error:
+{
+  "error": "400 Error: Bad Request",
+  "details": "{\"errors\":[{\"message\":\"Field \\\"isVerified\\\" is not defined by type \\\"AccountCondition\\\".\",\"locations\":[{\"line\":1,\"column\":76}]},{\"message\":\"Cannot query field \\\"isVerified\\\" on type \\\"Account\\\".\",\"locations\":[{\"line\":1,\"column\":162}]}]}"
+}
+
+DeSo Prod Error:
+{
+  "error": "400 Error: Bad Request",
+  "details": "{\"errors\":[{\"message\":\"Field \\\"isVerified\\\" is not defined by type \\\"AccountCondition\\\".\",\"locations\":[{\"line\":1,\"column\":76}]},{\"message\":\"Cannot query field \\\"isVerified\\\" on type \\\"Account\\\".\",\"locations\":[{\"line\":1,\"column\":162}]}]}"
+}
+
+Executing query on both endpoints...
+
+================================================================================
+Query: like_count
+================================================================================
+
+Variables:
+{}
+
+Response Times:
+  SafetyNet: 1.089s
+  DeSo Prod: 30.305s
+  Difference: 29.215s
+
+[ERROR] ERRORS DETECTED
+
+DeSo Prod Error:
+{
+  "error": "HTTPSConnectionPool(host='graphql-prod.deso.com', port=443): Read timed out. (read timeout=30)"
+}
+
+Executing query on both endpoints...
+
+================================================================================
+Query: diamond_count
+================================================================================
+
+Variables:
+{}
+
+Response Times:
+  SafetyNet: 0.840s
+  DeSo Prod: 27.672s
+  Difference: 26.833s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['diamonds']['totalCount']
+    SafetyNet: 13583129
+    DeSo Prod: 13755196
+    Difference: 172067 (+1.27%)
+
+Executing query on both endpoints...
+
+================================================================================
+Query: follow_count
+================================================================================
+
+Variables:
+{}
+
+Response Times:
+  SafetyNet: 0.960s
+  DeSo Prod: 30.364s
+  Difference: 29.404s
+
+[ERROR] ERRORS DETECTED
+
+DeSo Prod Error:
+{
+  "error": "HTTPSConnectionPool(host='graphql-prod.deso.com', port=443): Read timed out. (read timeout=30)"
+}
+
+Executing query on both endpoints...
+
+================================================================================
+Query: nft_count
+================================================================================
+
+Variables:
+{}
+
+Response Times:
+  SafetyNet: 0.414s
+  DeSo Prod: 4.815s
+  Difference: 4.401s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['nfts']['totalCount']
+    SafetyNet: 4341470
+    DeSo Prod: 4377296
+    Difference: 35826 (+0.83%)
+
+================================================================================
+Comparison Complete
+================================================================================
+

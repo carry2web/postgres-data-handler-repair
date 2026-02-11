@@ -1,0 +1,43 @@
+GraphQL Endpoint Comparison Tool
+Endpoint 1: https://graphql.safetynet.social/graphql
+Endpoint 2: https://graphql-prod.deso.com/graphql
+Log file: C:\Users\info\safetynet\postgres-data-handler\tools\comparison_results.log
+
+
+Executing query on both endpoints...
+
+================================================================================
+Query: account_stats
+================================================================================
+
+Variables:
+{
+  "first": 10,
+  "condition": {
+    "publicKey": "BC1YLh8heSjLGcmd7k8p2L4C63r4PhGCdESTcVNDDvTbrrP8NaidpTF"
+  }
+}
+
+Response Times:
+  SafetyNet: 0.343s
+  DeSo Prod: 0.550s
+  Difference: 0.207s
+
+[!] DIFFERENCES FOUND
+
+Value Changes:
+
+  Path: root['data']['accounts']['nodes'][0]['followers']['totalCount']
+    SafetyNet: 1268
+    DeSo Prod: 1350
+    Difference: 82 (+6.47%)
+
+  Path: root['data']['accounts']['nodes'][0]['following']['totalCount']
+    SafetyNet: 375
+    DeSo Prod: 385
+    Difference: 10 (+2.67%)
+
+================================================================================
+Comparison Complete
+================================================================================
+
