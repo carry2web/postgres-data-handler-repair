@@ -10,10 +10,10 @@ services:
       - STATE_CHANGE_DIR=/db/state-changes
       - REPAIR_WORKERS=200
       # Smart reprocessing options (uncomment to use)
-      # - USE_STATE_CHANGES=true
-      # - SKIP_BLOCKS=true
-      # - REPAIR_START_HEIGHT=8606270
-      # - REPAIR_END_HEIGHT=8606370
+      - USE_STATE_CHANGES=true
+      - SKIP_BLOCKS=true
+      - REPAIR_START_HEIGHT=17137135
+      - REPAIR_END_HEIGHT=17137235
       # Or use gap file
       # - GAP_FILE=state-changes-gaps.txt
     volumes:
