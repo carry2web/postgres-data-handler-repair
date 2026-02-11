@@ -366,6 +366,8 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 	lastLogTime := time.Now()
 
 	// Scan through all entries in the state-change files
+	bufReader := bufio.NewReader(dataFile)
+	
 	for {
 		totalEntries++
 
@@ -376,8 +378,8 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 			lastLogTime = time.Now()
 		}
 
-		// Read index entry (24 bytes: 8 offset + 8 length + 8 block height)
-		indexBytes := make([]byte, 24)
+		// Read index entry (8 bytes: offset into data file, little-endian)
+		indexBytes := make([]byte, 8)
 		if _, err := io.ReadFull(indexFile, indexBytes); err != nil {
 			if err == io.EOF {
 				break
@@ -385,35 +387,54 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 			return fmt.Errorf("error reading index: %w", err)
 		}
 
-		offset := binary.BigEndian.Uint64(indexBytes[0:8])
-		length := binary.BigEndian.Uint64(indexBytes[8:16])
-		blockHeight := binary.BigEndian.Uint64(indexBytes[16:24])
-
-		// Debug: log first few block heights to see if they make sense
-		if totalEntries <= 10 {
-			log.Printf("DEBUG: Entry %d - offset=%d, length=%d, blockHeight=%d", totalEntries, offset, length, blockHeight)
-		}
-
-		// Skip entries outside our range
-		if blockHeight < startHeight || blockHeight > endHeight {
-			continue
-		}
+		offset := binary.LittleEndian.Uint64(indexBytes[0:8])
 
 		// Read the state change entry from data file
 		if _, err := dataFile.Seek(int64(offset), 0); err != nil {
 			return fmt.Errorf("seek error at offset %d: %w", offset, err)
 		}
 
-		entryBytes := make([]byte, length)
-		if _, err := io.ReadFull(dataFile, entryBytes); err != nil {
-			return fmt.Errorf("error reading entry data: %w", err)
+		// Reset buffered reader after seek
+		bufReader.Reset(dataFile)
+
+		// Read entry length (uvarint)
+		entryLength, err := binary.ReadUvarint(bufReader)
+		if err != nil {
+			log.Printf("WARNING: Failed to read entry length at offset %d: %v", offset, err)
+			continue
+		}
+
+		// Sanity check: max 10MB per entry
+		if entryLength > 10*1024*1024 {
+			log.Printf("WARNING: Entry too large at offset %d: %d bytes", offset, entryLength)
+			continue
+		}
+
+		entryBytes := make([]byte, entryLength)
+		if _, err := io.ReadFull(bufReader, entryBytes); err != nil {
+			log.Printf("WARNING: Failed to read entry data: %v", err)
+			continue
 		}
 
 		// Decode the state change entry
 		entry := &lib.StateChangeEntry{}
 		rr := bytes.NewReader(entryBytes)
 		if _, err := lib.DecodeFromBytes(entry, rr); err != nil {
-			log.Printf("WARNING: Failed to decode entry at block %d: %v", blockHeight, err)
+			log.Printf("WARNING: Failed to decode entry at offset %d: %v", offset, err)
+			continue
+		}
+
+		// Get block height from the decoded entry
+		blockHeight := entry.BlockHeight
+
+		// Debug: log first few entries to verify parsing
+		if totalEntries <= 10 {
+			log.Printf("DEBUG: Entry %d - offset=%d, encoder_type=%d, blockHeight=%d",
+				totalEntries, offset, entry.EncoderType, blockHeight)
+		}
+
+		// Skip entries outside our range
+		if blockHeight < startHeight || blockHeight > endHeight {
 			continue
 		}
 

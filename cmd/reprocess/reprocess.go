@@ -137,9 +137,11 @@ func main() {
 
 	log.Printf("Scanning state-change files for blocks in range %d -> %d", startHeight, endHeight)
 
+	bufReader := bufio.NewReader(dataFile)
+
 	for {
-		// Read index entry (24 bytes: 8 offset + 8 length + 8 block height)
-		indexBytes := make([]byte, 24)
+		// Read index entry (8 bytes: offset into data file, little-endian)
+		indexBytes := make([]byte, 8)
 		if _, err := io.ReadFull(indexFile, indexBytes); err != nil {
 			if err == io.EOF {
 				break
@@ -147,32 +149,50 @@ func main() {
 			log.Fatalf("Error reading index: %v", err)
 		}
 
-		offset := binary.BigEndian.Uint64(indexBytes[0:8])
-		length := binary.BigEndian.Uint64(indexBytes[8:16])
-		blockHeight := binary.BigEndian.Uint64(indexBytes[16:24])
-
+		offset := binary.LittleEndian.Uint64(indexBytes[0:8])
 		currentEntryIndex++
-
-		// Skip entries outside our range
-		if blockHeight < startHeight || blockHeight > endHeight {
-			skipped++
-			continue
-		}
 
 		// Read the state change entry from data file
 		if _, err := dataFile.Seek(int64(offset), 0); err != nil {
 			log.Fatalf("Seek error at offset %d: %v", offset, err)
 		}
 
-		entryBytes := make([]byte, length)
-		if _, err := io.ReadFull(dataFile, entryBytes); err != nil {
-			log.Fatalf("Error reading entry data: %v", err)
+		// Reset buffered reader after seek
+		bufReader.Reset(dataFile)
+
+		// Read entry length (uvarint)
+		entryLength, err := binary.ReadUvarint(bufReader)
+		if err != nil {
+			log.Printf("WARNING: Failed to read entry length at offset %d: %v", offset, err)
+			continue
+		}
+
+		// Sanity check: max 10MB per entry
+		if entryLength > 10*1024*1024 {
+			log.Printf("WARNING: Entry too large at offset %d: %d bytes", offset, entryLength)
+			continue
+		}
+
+		entryBytes := make([]byte, entryLength)
+		if _, err := io.ReadFull(bufReader, entryBytes); err != nil {
+			log.Printf("WARNING: Failed to read entry data: %v", err)
+			continue
 		}
 
 		// Decode the state change entry
 		entry := &lib.StateChangeEntry{}
-		if err := entry.FromBytes(blockHeight, entryBytes); err != nil {
-			log.Printf("WARNING: Failed to decode entry at block %d: %v", blockHeight, err)
+		rr := bytes.NewReader(entryBytes)
+		if _, err := lib.DecodeFromBytes(entry, rr); err != nil {
+			log.Printf("WARNING: Failed to decode entry at offset %d: %v", offset, err)
+			continue
+		}
+
+		// Get block height from decoded entry
+		blockHeight := entry.BlockHeight
+
+		// Skip entries outside our range
+		if blockHeight < startHeight || blockHeight > endHeight {
+			skipped++
 			continue
 		}
 
