@@ -363,9 +363,19 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 	entriesProcessed := uint64(0)
 	entriesSkipped := uint64(0)
 	totalEntries := uint64(0)
+	lastLogTime := time.Now()
 
 	// Scan through all entries in the state-change files
 	for {
+		totalEntries++
+		
+		// Log progress every 100K entries or every 10 seconds
+		if totalEntries%100000 == 0 || time.Since(lastLogTime) > 10*time.Second {
+			log.Printf("Progress: Scanned %d entries, found %d blocks in range, processed %d entries, skipped %d blocks",
+				totalEntries, len(blocksFound), entriesProcessed, blocksSkipped)
+			lastLogTime = time.Now()
+		}
+		
 		// Read index entry (24 bytes: 8 offset + 8 length + 8 block height)
 		indexBytes := make([]byte, 24)
 		if _, err := io.ReadFull(indexFile, indexBytes); err != nil {
