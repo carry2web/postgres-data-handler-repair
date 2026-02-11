@@ -368,14 +368,14 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 	// Scan through all entries in the state-change files
 	for {
 		totalEntries++
-		
+
 		// Log progress every 100K entries or every 10 seconds
 		if totalEntries%100000 == 0 || time.Since(lastLogTime) > 10*time.Second {
 			log.Printf("Progress: Scanned %d entries, found %d blocks in range, processed %d entries, skipped %d blocks",
 				totalEntries, len(blocksFound), entriesProcessed, blocksSkipped)
 			lastLogTime = time.Now()
 		}
-		
+
 		// Read index entry (24 bytes: 8 offset + 8 length + 8 block height)
 		indexBytes := make([]byte, 24)
 		if _, err := io.ReadFull(indexFile, indexBytes); err != nil {
@@ -388,7 +388,11 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 		offset := binary.BigEndian.Uint64(indexBytes[0:8])
 		length := binary.BigEndian.Uint64(indexBytes[8:16])
 		blockHeight := binary.BigEndian.Uint64(indexBytes[16:24])
-		totalEntries++
+
+		// Debug: log first few block heights to see if they make sense
+		if totalEntries <= 10 {
+			log.Printf("DEBUG: Entry %d - offset=%d, length=%d, blockHeight=%d", totalEntries, offset, length, blockHeight)
+		}
 
 		// Skip entries outside our range
 		if blockHeight < startHeight || blockHeight > endHeight {
