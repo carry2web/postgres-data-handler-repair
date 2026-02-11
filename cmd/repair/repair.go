@@ -397,7 +397,8 @@ func processGapFromStateChange(stateChangeDir string, startHeight, endHeight uin
 
 		// Decode the state change entry
 		entry := &lib.StateChangeEntry{}
-		if err := entry.FromBytes(blockHeight, entryBytes); err != nil {
+		rr := bytes.NewReader(entryBytes)
+		if _, err := lib.DecodeFromBytes(entry, rr); err != nil {
 			log.Printf("WARNING: Failed to decode entry at block %d: %v", blockHeight, err)
 			continue
 		}
