@@ -1,0 +1,14 @@
+FROM golang:1.21-alpine as builder
+WORKDIR /app
+COPY ../../blocks-reprocess.txt ./blocks-reprocess.txt
+COPY ../../data-handler.env ./data-handler.env
+COPY . .
+RUN go build -o reprocess-blocks reprocess-blocks.go
+
+FROM alpine:3.18
+WORKDIR /app
+COPY --from=builder /app/reprocess-blocks .
+COPY --from=builder /app/blocks-reprocess.txt ./blocks-reprocess.txt
+COPY --from=builder /app/data-handler.env ./data-handler.env
+ENV DATA_HANDLER_ENV=./data-handler.env
+CMD ["./reprocess-blocks"]

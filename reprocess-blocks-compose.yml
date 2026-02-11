@@ -1,0 +1,17 @@
+services:
+  reprocess-blocks:
+    build:
+      context: ./cmd/reprocess-blocks
+      dockerfile: Dockerfile.reprocess-blocks
+    volumes:
+      - ./blocks-reprocess.txt:/app/blocks-reprocess.txt:ro
+      - ./data-handler.env:/app/data-handler.env:ro
+    environment:
+      - DATA_HANDLER_ENV=/app/data-handler.env
+    restart: "no"
+    networks:
+      - run_internal
+
+networks:
+  run_internal:
+    external: true
