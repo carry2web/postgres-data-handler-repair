@@ -10,33 +10,33 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 
 WORKDIR /reprocess-blocks/src
 
-COPY backend/go.mod backend/
-COPY backend/go.sum backend/
-COPY core/go.mod core/
-COPY core/go.sum core/
-COPY state-changes/go.mod state-changes/
-COPY state-changes/go.sum state-changes/
+COPY ../backend/go.mod backend/
+COPY ../backend/go.sum backend/
+COPY ../core/go.mod core/
+COPY ../core/go.sum core/
+COPY ../state-changes/go.mod state-changes/
+COPY ../state-changes/go.sum state-changes/
 
 WORKDIR /reprocess-blocks/src/reprocess-blocks
 RUN go mod download
 
-COPY backend/apis      backend/apis
-COPY backend/config    backend/config
-COPY backend/cmd       backend/cmd
-COPY backend/miner     backend/miner
-COPY backend/routes    backend/routes
-COPY backend/countries backend/countries
-COPY core/desohash     core/desohash
-COPY core/consensus    core/consensus
-COPY core/collections  core/collections
-COPY core/bls          core/bls
-COPY core/cmd          core/cmd
-COPY core/lib          core/lib
-COPY core/migrate      core/migrate
-COPY state-changes/    state-changes/
-COPY blocks-reprocess.txt ./blocks-reprocess.txt
-COPY data-handler.env ./data-handler.env
-COPY cmd/reprocess-blocks/reprocess-blocks.go ./reprocess-blocks.go
+COPY ../backend/apis      backend/apis
+COPY ../backend/config    backend/config
+COPY ../backend/cmd       backend/cmd
+COPY ../backend/miner     backend/miner
+COPY ../backend/routes    backend/routes
+COPY ../backend/countries backend/countries
+COPY ../core/desohash     core/desohash
+COPY ../core/consensus    core/consensus
+COPY ../core/collections  core/collections
+COPY ../core/bls          core/bls
+COPY ../core/cmd          core/cmd
+COPY ../core/lib          core/lib
+COPY ../core/migrate      core/migrate
+COPY ../state-changes/    state-changes/
+COPY blocks-reprocess.txt blocks-reprocess.txt
+COPY data-handler.env data-handler.env
+COPY cmd/reprocess-blocks/reprocess-blocks.go reprocess-blocks.go
 
 RUN go mod tidy
 
