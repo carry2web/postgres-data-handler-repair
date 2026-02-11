@@ -15,6 +15,3 @@ services:
 networks:
   run_internal:
     external: true
-    build:
-      context: ..
-      dockerfile: ./Dockerfile.reprocess-blocks
