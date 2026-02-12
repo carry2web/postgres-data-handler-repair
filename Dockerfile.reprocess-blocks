@@ -31,24 +31,24 @@ COPY cmd        cmd
 COPY blocks-reprocess.txt blocks-reprocess.txt
 
 # include core src
-COPY ../core/desohash    ../core/desohash
-COPY ../core/consensus   ../core/consensus
-COPY ../core/collections ../core/collections
-COPY ../core/bls         ../core/bls
-COPY ../core/cmd         ../core/cmd
-COPY ../core/lib         ../core/lib
-COPY ../core/migrate     ../core/migrate
+COPY core/desohash    ../core/desohash
+COPY core/consensus   ../core/consensus
+COPY core/collections ../core/collections
+COPY core/bls         ../core/bls
+COPY core/cmd         ../core/cmd
+COPY core/lib         ../core/lib
+COPY core/migrate     ../core/migrate
 
 # include backend src
-COPY ../backend/apis      ../backend/apis
-COPY ../backend/config    ../backend/config
-COPY ../backend/cmd       ../backend/cmd
-COPY ../backend/miner     ../backend/miner
-COPY ../backend/routes    ../backend/routes
-COPY ../backend/countries ../backend/countries
+COPY backend/apis      ../backend/apis
+COPY backend/config    ../backend/config
+COPY backend/cmd       ../backend/cmd
+COPY backend/miner     ../backend/miner
+COPY backend/routes    ../backend/routes
+COPY backend/countries ../backend/countries
 
 # include state-consumer src
-COPY ../state-consumer/consumer ../state-consumer/consumer
+COPY state-consumer/consumer ../state-consumer/consumer
 
 RUN go mod tidy
 
