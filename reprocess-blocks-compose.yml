@@ -1,8 +1,8 @@
 services:
   reprocess-blocks:
     build:
-      context: ..
-      dockerfile: postgres-data-handler/Dockerfile.reprocess-blocks
+      context: .
+      dockerfile: Dockerfile.reprocess-blocks
     env_file:
       - ./data-handler.env
     environment:
