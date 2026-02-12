@@ -11,8 +11,6 @@ import (
 	"strings"
 
 	"github.com/deso-protocol/core/lib"
-	"github.com/deso-protocol/postgres-data-handler/handler"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/spf13/viper"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
@@ -69,15 +67,8 @@ func main() {
 	}
 	lib.GlobalDeSoParams = *params
 
-	cachedEntries, err := lru.New[string, []byte](int(handler.EntryCacheSize))
-	if err != nil {
-		log.Fatalf("LRU cache: %v", err)
-	}
-	pdh := &handler.PostgresDataHandler{
-		DB:            db,
-		Params:        params,
-		CachedEntries: cachedEntries,
-	}
+	// cachedEntries removed: not used in this tool
+	// pdh removed: not used in this tool
 
 	ctx := context.Background()
 
