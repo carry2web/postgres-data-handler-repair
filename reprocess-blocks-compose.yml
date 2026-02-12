@@ -2,14 +2,14 @@ services:
   reprocess-blocks:
     build:
       context: ..
-      dockerfile: postgres-data-handler/Dockerfile.reprocess-blocks
+      dockerfile: postgres-data-handler-repair/Dockerfile.reprocess-blocks
     env_file:
       - ./data-handler.env
     environment:
       - DATA_HANDLER_ENV=./data-handler.env
     volumes:
-      - ./blocks-reprocess.txt:/postgres-data-handler/src/postgres-data-handler/blocks-reprocess.txt:ro
-      - ./data-handler.env:/postgres-data-handler/src/postgres-data-handler/data-handler.env:ro
+      - ./blocks-reprocess.txt:/postgres-data-handler-repair/src/postgres-data-handler/blocks-reprocess.txt:ro
+      - ./data-handler.env:/postgres-data-handler-repair/src/postgres-data-handler/data-handler.env:ro
     restart: "no"
     networks:
       - run_internal
