@@ -19,6 +19,13 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 )
 
+// Block represents a row in the block table
+type Block struct {
+	BlockHash   []byte `bun:"block_hash"`
+	BlockHeight uint64 `bun:"block_height"`
+	// Add other fields as needed from your block table schema
+}
+
 func main() {
 	gapFile := "/postgres-data-handler/src/postgres-data-handler/blocks-reprocess.txt"
 	log.Printf("Reprocessing blocks from %s...", gapFile)
@@ -80,11 +87,6 @@ func main() {
 		}
 
 		// Fetch block entry from DB (block table)
-		type Block struct {
-			BlockHash   []byte `bun:"block_hash"`
-			BlockHeight uint64 `bun:"block_height"`
-			// Add other fields as needed from your block table schema
-		}
 		block := &Block{}
 		err := db.NewSelect().Model(block).Where("block_height = ?", height).Scan(ctx)
 		if err != nil {
