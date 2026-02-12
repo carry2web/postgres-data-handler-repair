@@ -9,7 +9,6 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 
 WORKDIR /postgres-data-handler/src
 
-# Copy go.mod and go.sum for all modules
 COPY go.mod postgres-data-handler/
 COPY go.sum postgres-data-handler/
 COPY core/go.mod                  core/

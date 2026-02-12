@@ -1,21 +1,20 @@
 services:
   reprocess-blocks:
     build:
-      context: .
-      dockerfile: Dockerfile.reprocess-blocks
+      context: ..
+      dockerfile: postgres-data-handler/Dockerfile.reprocess-blocks
     env_file:
       - ./data-handler.env
     environment:
-      # You can add more environment variables as needed
+      # Add any reprocess-blocks specific environment variables here
       - DATA_HANDLER_ENV=./data-handler.env
       # - NODE_URL=http://backend:17001
       # - OTHER_ENV_VAR=value
     volumes:
-      # Mount the blocks list and env file (read-only)
+      # Use the same bind mount as your backend container if needed
+      # - /opt/volumes/backend:/db:ro
       - ./blocks-reprocess.txt:/postgres-data-handler/src/postgres-data-handler/blocks-reprocess.txt:ro
       - ./data-handler.env:/postgres-data-handler/src/postgres-data-handler/data-handler.env:ro
-      # Example: mount backend data if needed
-      # - /opt/volumes/backend:/db:ro
     restart: "no"
     networks:
       - run_internal
